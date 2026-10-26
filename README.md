@@ -1,56 +1,70 @@
-# Welcome to your Expo app 👋
+# Showtime AI
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+The AI music video studio. Record your verse to the beat, pick where the video takes place, add effects, and export, with a director in the chat walking you through every stage.
 
-## Get started
+This repo is **Phase 1: a clickable prototype of the whole flow on sample data.** Nothing calls a paid API yet. Every render is simulated with the same limits the real providers have.
 
-1. Install dependencies
+## Run it
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+**On a laptop or Chromebook (Linux):**
 
 ```bash
-npm run reset-project
+npm install
+npm run web
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+Then open http://localhost:8081.
 
-### Other setup steps
+**On your phone with Expo Go:**
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+```bash
+npm install
+npm run tunnel
+```
 
-## Learn more
+Scan the QR code with the Expo Go app on Android, or with the Camera app on iPhone. The live camera and haptics only work on a phone.
 
-To learn more about developing your project with Expo, look at the following resources:
+## What's in the prototype
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- The 11 stages: song, record, rough cut, location, switch, genjutsu (optional), b-roll (optional), VFX, final, resize, export.
+- The slate tracker at the top of every project. It claps when a stage finishes, and any finished stage can be reopened.
+- The director chat. It says what's next, answers questions about time, cost, skipping and redoing, and files ideas into the right stage.
+- The recorder: a count-in on the beat, a lyric prompter and the take plan.
+- Three sample projects: *Out the Mud* (mid-switch), *Late Night Freestyle* (recording) and *Windy City* (finished).
+- Tutorials, credits, plans and the paywall (purchases are simulated).
 
-## Join the community
+## What's simulated
 
-Join our community of developers creating universal apps.
+| In the prototype | In Phase 2 |
+| --- | --- |
+| Takes are saved as data, not video | Real takes uploaded and lined up with the song |
+| Track mapping on a timer | Beat and section detection, lyric timing |
+| Plates, switch, swaps, b-roll | Beeble SwitchX, GPT Image plates, Higgsfield, Google Omni or H3 |
+| Effects, final, resize, export | The render pipeline, Beeble resize, Topaz upscale |
+| Credits and plans | Stripe |
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+The switch already plays by the real rules: shots are cut every 4 bars, each shot is capped at 240 frames at 24 fps, and 5 render at a time.
+
+## Phase 2
+
+API keys never go in the app. Phase 2 adds a small server that holds the keys and runs the jobs. The app keeps its screens: each simulated job in `src/engine/actions.ts` (`advance`) becomes a server job that reports progress through the same transitions.
+
+## Project map
+
+```
+src/app/          screens (Expo Router)
+src/engine/       stage machine, director, sample data and tests (no UI)
+src/components/   slate tracker, chat, recorder and stage screens
+src/theme/        colors, type and spacing
+src/lib/          helpers shared by screens
+```
+
+## Commands
+
+```bash
+npm run web          # web preview
+npm run tunnel       # phone preview through Expo Go
+npm test             # engine tests
+npm run typecheck    # TypeScript
+npm run export:web   # build the web version into dist/
+```
