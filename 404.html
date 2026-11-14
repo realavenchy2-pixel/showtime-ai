@@ -35,7 +35,10 @@
     <link rel="apple-touch-icon" href="/showtime-ai/icons/icon-180.png" />
     <style>
       html, body { background: #000; color-scheme: dark; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
-      #boot { position: fixed; inset: 0; display: grid; place-items: center; font: 800 34px/1 "Arial Narrow", system-ui, sans-serif; letter-spacing: 0.5px; color: #F2F0EC; }
+      #boot { position: fixed; inset: 0; display: grid; place-items: center; }
+      #boot img { width: min(64vw, 280px); height: auto; animation: boot 1.1s ease-in-out infinite alternate; }
+      @keyframes boot { from { opacity: 0.55; } to { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { #boot img { animation: none; } }
       #root:not(:empty) + #boot { display: none; }
     </style>
   </head>
@@ -45,7 +48,7 @@
     <noscript> You need to enable JavaScript to run this app. </noscript>
     <!-- The root element for your Expo app. -->
     <div id="root"></div>
-    <div id="boot" role="status">Showtime</div>
+    <div id="boot" role="status"><img src="/showtime-ai/icons/logo.png" alt="Showtime AI is loading" width="1100" height="330" /></div>
   <script src="/showtime-ai/_expo/static/js/web/entry-a53a951c8c75a928f921fc360e99d498.js" defer></script>
 </body>
 </html>
