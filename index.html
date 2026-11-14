@@ -1,10 +1,51 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Showtime AI</title>
-<style>html,body{height:100%;margin:0;background:#000;color:#F2F0EC;font:600 18px system-ui,sans-serif;display:grid;place-items:center}</style>
-</head>
-<body><p>Showtime AI is setting up. Check back in a bit.</p></body>
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Showtime AI</title>
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+  <link rel="icon" href="/showtime-ai/favicon.ico"/>
+    <meta name="theme-color" content="#000000" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Showtime" />
+    <meta name="description" content="Record your verse with the song playing. Your director cuts, switches the world around you and builds the video." />
+    <link rel="manifest" href="/showtime-ai/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/showtime-ai/icons/icon-180.png" />
+    <style>
+      html, body { background: #000; color-scheme: dark; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+      #boot { position: fixed; inset: 0; display: grid; place-items: center; font: 800 34px/1 "Arial Narrow", system-ui, sans-serif; letter-spacing: 0.5px; color: #F2F0EC; }
+      #root:not(:empty) + #boot { display: none; }
+    </style>
+  </head>
+
+  <body>
+    <!-- Use static rendering with Expo Router to support running without JavaScript. -->
+    <noscript> You need to enable JavaScript to run this app. </noscript>
+    <!-- The root element for your Expo app. -->
+    <div id="root"></div>
+    <div id="boot" role="status">Showtime</div>
+  <script src="/showtime-ai/_expo/static/js/web/entry-c42e54923cca8bc44f7f11c3a893640c.js" defer></script>
+</body>
 </html>
