@@ -68,6 +68,11 @@ export async function mediaUrl(id: string): Promise<string | undefined> {
   return url;
 }
 
+/** The URL for `id` if it has been asked for before. */
+export function mediaUrlNow(id: string): string | undefined {
+  return urls.get(id);
+}
+
 export async function removeMedia(id: string): Promise<void> {
   memory.delete(id);
   const url = urls.get(id);

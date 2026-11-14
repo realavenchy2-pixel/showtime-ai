@@ -1,3 +1,5 @@
+import type { Song } from '@/engine/types';
+
 import type { Composition } from './composition';
 
 // Phone build: the finished video is rendered by the studio server, not on the device.
@@ -7,6 +9,13 @@ export interface ExportOptions {
   fps?: number;
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
+  audio?: ExportAudio;
+}
+
+export type ExportAudio = never;
+
+export function prepareExportAudio(_song: Song | undefined): ExportAudio | undefined {
+  return undefined;
 }
 
 export interface ExportResult {

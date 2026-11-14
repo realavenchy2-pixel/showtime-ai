@@ -1,3 +1,6 @@
+import type { Song } from '@/engine/types';
+
+import { audioContext, playPrimed, primeElement, songUrlNow } from './audio.web';
 import { Compositor } from './compositor.web';
 import type { Composition } from './composition';
 import { frameSize, sourceUrls } from './player.web';
@@ -12,7 +15,29 @@ export interface ExportOptions {
   fps?: number;
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
+  /** A song player that was started inside a tap, so phones let it play during the render. */
+  audio?: ExportAudio;
 }
+
+export type ExportAudio = HTMLAudioElement;
+
+/**
+ * Call straight from the tap that starts an export. Phones refuse to start sound later on their own,
+ * so the song's player and the audio engine are both woken up here.
+ */
+export function prepareExportAudio(song: Song | undefined): ExportAudio | undefined {
+  audioContext();
+  const url = song ? songUrlNow(song) : undefined;
+  if (!url) return undefined;
+  const audio = new Audio();
+  audio.crossOrigin = 'anonymous';
+  audio.preload = 'auto';
+  audio.src = url;
+  primeElement(audio);
+  return audio;
+}
+
+const sources = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
 
 export interface ExportResult {
   blob: Blob;
@@ -36,21 +61,32 @@ export async function exportComposition(comp: Composition, songUrl: string, opts
   compositor.resize(width, height);
   compositor.setComposition(comp, await sourceUrls(comp));
 
-  const audio = new Audio();
-  audio.crossOrigin = 'anonymous';
-  audio.src = songUrl;
-  audio.preload = 'auto';
-  await new Promise<void>((resolve, reject) => {
-    audio.addEventListener('canplaythrough', () => resolve(), { once: true });
-    audio.addEventListener('error', () => reject(new Error('The song could not be loaded for the export.')), { once: true });
-    audio.load();
-  });
+  const own = !opts.audio;
+  const audio = opts.audio ?? new Audio();
+  if (own) {
+    audio.crossOrigin = 'anonymous';
+    audio.preload = 'auto';
+    audio.src = songUrl;
+  }
+  audio.pause();
+  if (audio.readyState < 3) {
+    await new Promise<void>((resolve, reject) => {
+      audio.addEventListener('canplay', () => resolve(), { once: true });
+      audio.addEventListener('error', () => reject(new Error('The song could not be loaded for the export.')), { once: true });
+      if (own) audio.load();
+    });
+  }
+  audio.currentTime = 0;
 
   // The song goes straight into the file, not to the speakers.
-  const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-  const ac = new Ctor();
+  const ac = audioContext();
   const dest = ac.createMediaStreamDestination();
-  ac.createMediaElementSource(audio).connect(dest);
+  let source = sources.get(audio);
+  if (!source) {
+    source = ac.createMediaElementSource(audio);
+    sources.set(audio, source);
+  }
+  source.connect(dest);
 
   const stream = new MediaStream([...canvas.captureStream(fps).getVideoTracks(), ...dest.stream.getAudioTracks()]);
   const pixels = width * height;
@@ -68,11 +104,17 @@ export async function exportComposition(comp: Composition, songUrl: string, opts
   const cleanup = () => {
     cancelAnimationFrame(raf);
     audio.pause();
-    audio.removeAttribute('src');
-    audio.load();
+    try {
+      source.disconnect(dest);
+    } catch {
+      // Already disconnected.
+    }
+    if (own) {
+      audio.removeAttribute('src');
+      audio.load();
+    }
     stream.getTracks().forEach((t) => t.stop());
     compositor.dispose();
-    void ac.close().catch(() => {});
   };
 
   return new Promise<ExportResult>((resolve, reject) => {
@@ -104,8 +146,7 @@ export async function exportComposition(comp: Composition, songUrl: string, opts
     compositor.render(0, false);
     const begin = () => {
       recorder.start(1000);
-      void ac.resume();
-      audio.play().then(() => (raf = requestAnimationFrame(draw)), () => fail(new Error('The export could not start playing the song.')));
+      playPrimed(audio).then(() => (raf = requestAnimationFrame(draw)), () => fail(new Error('The export could not start playing the song.')));
     };
     // Give the first footage file a moment to decode its opening frame.
     const waitStart = performance.now();

@@ -5,7 +5,7 @@ import { useApp } from '@/engine/store';
 import type { Format } from '@/engine/types';
 import { songUrl } from '@/media/audio';
 import { aspectOf, buildComposition } from '@/media/composition';
-import { canExport, exportComposition } from '@/media/exporter';
+import { canExport, exportComposition, type ExportAudio } from '@/media/exporter';
 import { saveMedia } from '@/media/library';
 
 // Renders the finished video on this device, one format at a time. It lives outside any screen,
@@ -39,7 +39,8 @@ export function cancelExport(projectId: string): void {
 
 export type ExportOutcome = 'done' | 'needCredits' | 'failed' | 'cancelled' | 'busy';
 
-export async function runExport(projectId: string): Promise<ExportOutcome> {
+/** `audio` is the song player woken up inside the tap; one player carries every format. */
+export async function runExport(projectId: string, audio?: ExportAudio): Promise<ExportOutcome> {
   const app = useApp.getState();
   const project = app.projects[projectId];
   if (!project || !project.song || project.job || running.has(projectId)) return 'busy';
@@ -75,6 +76,7 @@ export async function runExport(projectId: string): Promise<ExportOutcome> {
       const label = formats.length === 1 ? 'Rendering your video. Keep this tab open.' : `Rendering format ${i + 1} of ${formats.length}. Keep this tab open.`;
       const result = await exportComposition(comp, url, {
         size: deviceExportSize(),
+        audio,
         signal: controller.signal,
         onProgress: (f) => report((i + f) / formats.length, label),
       });

@@ -27,19 +27,29 @@ Pipeline, 8 stages: `song → shoot → cut → looks → switch → broll → e
 - Beeble Product API (`/v1/products/{product}/jobs`, credits) exposes `switchx-3.0`; the input schema is only visible with a key (`GET /v1/products/{product}/models`).
 - The web app is live from the `gh-pages` branch: https://realavenchy2-pixel.github.io/showtime-ai/
 
+## How to test and deploy
+
+- `npm test`, `npm run typecheck`, `npm run lint`.
+- Browser run with a fake camera: `python3 <scratchpad>/tools/e2e.py` (Playwright, starts its own server on `dist`).
+- Deploy the web app: `npm run build:pages`, copy `dist/` into the `gh-pages` worktree (`/home/claude/showtime-pages`), commit, push.
+- Work happens on the `v2` branch. `main` still holds the first prototype until v2 is merged.
+
 ## Status
 
-See the checklist at the bottom of this file. Keep it current.
+Keep the checklist current. A session can end without warning.
 
 ## Checklist
 
 - [x] Demo beats with real audio
-- [ ] Engine v2 passing tests
-- [ ] Song import and beat mapping (web)
-- [ ] Recorder with the song playing, takes saved and synced (web)
-- [ ] Clip upload, sync and chop
-- [ ] Player: multicam cut with effects on the beat
-- [ ] Export on device (web)
-- [ ] Studio, plan card, Switch screen modeled on SwitchX
-- [ ] Server and live wiring
-- [ ] Deployed to gh-pages, pushed to main
+- [x] Engine v2 passing tests
+- [x] Song import and beat mapping (web)
+- [x] Recorder with the song playing, takes saved and synced (web)
+- [x] Clip upload, sync and chop
+- [x] Player: multicam cut with effects on the beat
+- [x] Export on device (web)
+- [x] Studio, plan card, Switch screen modeled on SwitchX
+- [x] Deployed to gh-pages (first v2 build)
+- [ ] Phone fix: song starts after the count-in and during export (primed inside the tap); verify, commit, redeploy
+- [ ] Export verified with a real file check
+- [ ] Server and live wiring (SwitchX 3.0 through the Product API, public SwitchX API as fallback, Claude director and edit)
+- [ ] v2 merged to main

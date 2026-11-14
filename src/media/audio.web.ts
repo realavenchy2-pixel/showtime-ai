@@ -1,7 +1,7 @@
 import type { Song } from '@/engine/types';
 
 import { analyzeTrack, envelopes, mixToMono, type Analysis } from './analyze';
-import { demoAudioUrl, mediaBlob, mediaUrl, saveMedia } from './library';
+import { demoAudioUrl, mediaBlob, mediaUrl, mediaUrlNow, saveMedia } from './library';
 import type { ImportedSong } from './types';
 
 // Browser audio: decoding files, mapping an imported song, and the one shared AudioContext.
@@ -111,4 +111,42 @@ export function scheduleClick(atCtxTime: number, accent: boolean): void {
   osc.connect(gain).connect(ac.destination);
   osc.start(atCtxTime);
   osc.stop(atCtxTime + 0.12);
+}
+
+const priming = new WeakMap<HTMLMediaElement, number>();
+
+/**
+ * Call from a tap. Phones only let a song start later on its own (after a count-in, during an export)
+ * if the same player was first started inside a tap. This starts it silently and stops it again.
+ */
+export function primeElement(el: HTMLMediaElement): void {
+  const id = (priming.get(el) ?? 0) + 1;
+  priming.set(el, id);
+  el.muted = true;
+  const settle = (started: boolean) => {
+    if (priming.get(el) !== id) return;
+    if (started) el.pause();
+    el.muted = false;
+  };
+  try {
+    void el.play().then(
+      () => settle(true),
+      () => settle(false),
+    );
+  } catch {
+    settle(false);
+  }
+}
+
+/** Starts a player that was primed earlier, with sound. */
+export function playPrimed(el: HTMLMediaElement): Promise<void> {
+  priming.set(el, (priming.get(el) ?? 0) + 1);
+  el.muted = false;
+  return el.play();
+}
+
+/** The song's URL when it is already known, without waiting. Lets a tap handler prime a player right away. */
+export function songUrlNow(song: Song): string | undefined {
+  if (!song.audioId) return undefined;
+  return song.source === 'demo' ? demoAudioUrl(song.audioId) : mediaUrlNow(song.audioId);
 }

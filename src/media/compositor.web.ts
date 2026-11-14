@@ -194,6 +194,9 @@ export class Compositor {
       const video = document.createElement('video');
       video.muted = true;
       video.playsInline = true;
+      // Older iPhones read these as attributes, not properties.
+      video.setAttribute('muted', '');
+      video.setAttribute('playsinline', '');
       video.preload = 'auto';
       video.crossOrigin = 'anonymous';
       video.dataset.url = url;

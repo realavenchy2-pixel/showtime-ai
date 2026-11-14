@@ -11,7 +11,7 @@ import { useApp, useProject } from '@/engine/store';
 import type { TakeScope } from '@/engine/types';
 import { addRecorded } from '@/lib/footage';
 import { haptic } from '@/lib/haptics';
-import { audioContext, scheduleClick, songPeaks, songUrl } from '@/media/audio.web';
+import { audioContext, playPrimed, primeElement, scheduleClick, songPeaks, songUrl } from '@/media/audio.web';
 import { cameraSupported, CameraSession, grabStill, type Facing } from '@/media/recorder.web';
 import { saveRecording } from '@/media/takes.web';
 import { color } from '@/theme/tokens';
@@ -177,6 +177,8 @@ export default function RecordScreen() {
     const beatSec = 60 / song.bpm;
     audio.pause();
     audio.currentTime = from;
+    // Inside the tap, so the phone lets the song start on its own after the count-in.
+    primeElement(audio);
     setSongTime(from);
     setBeat(4);
     setPhase('countin');
@@ -205,10 +207,12 @@ export default function RecordScreen() {
       return;
     }
     takeRef.current = { startedPerf: performance.now(), samples: [], from, hookOnly };
+    audio.pause();
+    audio.currentTime = from;
     await waitUntil(ac, downbeat - 0.02, cancelled);
     if (cancelled()) return;
     try {
-      await audio.play();
+      await playPrimed(audio);
     } catch {
       showToast('The song could not start. Check that this tab is allowed to play sound.');
     }

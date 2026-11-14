@@ -29,6 +29,10 @@ export async function mediaUrl(id: string): Promise<string | undefined> {
   return id;
 }
 
+export function mediaUrlNow(id: string): string | undefined {
+  return id;
+}
+
 export async function removeMedia(id: string): Promise<void> {
   try {
     const file = new File(id);

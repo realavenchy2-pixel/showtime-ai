@@ -9,7 +9,7 @@ import { useApp } from '@/engine/store';
 import type { Format, Project, Resolution } from '@/engine/types';
 import { cancelExport, exportDimensions, exportFileName, runExport } from '@/lib/exportRun';
 import { haptic } from '@/lib/haptics';
-import { canExport } from '@/media/exporter';
+import { canExport, prepareExportAudio } from '@/media/exporter';
 import { mediaBlob, saveToDevice } from '@/media/library';
 import { color, radius, space } from '@/theme/tokens';
 
@@ -49,7 +49,9 @@ export function ExportStage({ project }: { project: Project }) {
   };
 
   const start = async () => {
-    const outcome = await runExport(project.id);
+    // Before anything waits: wake the song's player while this is still the tap.
+    const audio = onDevice ? prepareExportAudio(project.song) : undefined;
+    const outcome = await runExport(project.id, audio);
     if (outcome === 'needCredits') router.push('/paywall');
     if (outcome === 'done') haptic.success();
   };
