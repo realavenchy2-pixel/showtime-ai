@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "npx expo export -p web && node scripts/postbuild-web.mjs dist",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/index.mjs": { "maxDuration": 60 }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api?__path=/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
