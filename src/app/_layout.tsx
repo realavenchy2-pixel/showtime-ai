@@ -6,6 +6,7 @@ import { View } from 'react-native';
 
 import { ToastHost } from '@/components/Toast';
 import { useApp } from '@/engine/store';
+import { startSession } from '@/live/session';
 import { useAppFonts } from '@/theme/fonts';
 import { color } from '@/theme/tokens';
 
@@ -36,6 +37,7 @@ function useJobTicker() {
 export default function RootLayout() {
   const fontsReady = useAppFonts();
   useJobTicker();
+  useEffect(() => startSession(), []);
 
   useEffect(() => {
     if (fontsReady) SplashScreen.hideAsync().catch(() => {});

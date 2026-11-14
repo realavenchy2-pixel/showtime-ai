@@ -261,6 +261,20 @@ export interface Idea {
 /** `auto`: the director runs the pipeline and stops only where it needs the artist. `ask`: it stops at every step. */
 export type Autonomy = 'auto' | 'ask';
 
+/** What the connected studio server can run. Read from the server when the project goes live. */
+export interface LiveCaps {
+  /** The SwitchX version the key can run, e.g. `switchx-3.0`, or `switchx` for the public API. */
+  model: string;
+  maxFrames: number;
+  maxRefs: number;
+  resolutions: number[];
+  broll: BrollModel[];
+  /** The server can generate a reference frame for a look. */
+  references: boolean;
+  /** Claude answers in the chat. */
+  director: boolean;
+}
+
 export interface Project {
   id: string;
   title: string;
@@ -269,6 +283,8 @@ export interface Project {
   autonomy: Autonomy;
   /** `demo`: AI renders are simulated on this device. `live`: they run on the studio server. */
   pipeline: 'demo' | 'live';
+  /** Set while `pipeline` is `live`. */
+  live?: LiveCaps;
   song?: Song;
   vibe?: Vibe;
   formats: Format[];

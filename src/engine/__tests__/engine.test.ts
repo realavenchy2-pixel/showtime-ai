@@ -8,6 +8,7 @@ import {
   approvePlan,
   buildCut,
   buildShots,
+  connectLive,
   coverage,
   createProject,
   exportCost,
@@ -16,13 +17,16 @@ import {
   finishJob,
   finishShooting,
   lockEdit,
+  MIN_SHOT_SEC,
   redoShot,
   reshuffleCut,
+  resumeSwitch,
   revisit,
   setAutonomy,
   setJobProgress,
   setLook,
   setResolution,
+  setSwitchSettings,
   settle,
   startSwitch,
   switchProgress,
@@ -36,6 +40,7 @@ import { buildSampleProjects } from '../sampleProjects';
 import { barSec, DEFAULT_TAKE_PLAN, DEMO_TRACKS, demoDuration, songFromDemo } from '../samples';
 import { currentStage, stageStatus, trackerView } from '../stages';
 import { HANDLE_SEC, SWITCHX } from '../switchx';
+import { recentChat, summarize } from '../summary';
 import type { Project } from '../types';
 
 const mud = () => songFromDemo(DEMO_TRACKS[0]);
@@ -436,6 +441,21 @@ describe('money', () => {
   });
 });
 
+describe('short takes', () => {
+  it('never cuts a sliver when two takes stop a moment apart', () => {
+    let p = settle(createProject({ song: songFromDemo(DEMO_TRACKS[1]), vibe: 'Melodic', formats: ['16:9'] }));
+    const take = (end: number) => ({ source: 'record' as const, fromSec: 0, durationSec: end, fps: 20, mediaId: `m-${end}` });
+    p = addTake(p, take(8.2));
+    p = addTake(p, take(8.45));
+    p = settle(finishShooting(setAutonomy(p, 'ask')));
+    const covered = p.cut.segments.filter((s) => s.takeId);
+    expect(covered.length).toBeGreaterThan(0);
+    for (const s of covered) expect(s.end - s.start).toBeGreaterThanOrEqual(MIN_SHOT_SEC);
+    // Everything after the takes run out is one gap per section, not a string of fragments.
+    expect(p.cut.segments.filter((s) => !s.takeId).length).toBeLessThanOrEqual(p.song!.sections.length);
+  });
+});
+
 describe('live jobs', () => {
   it('leaves an external job alone until the runner reports back', () => {
     let p: Project = { ...approvePlan(setAutonomy(planned(), 'ask')), plates: 'approved' };
@@ -458,6 +478,63 @@ describe('live jobs', () => {
     expect(p.job).toBeUndefined();
     expect(p.shots.every((s) => s.status === 'failed')).toBe(true);
     expect(p.messages.at(-1)?.text).toMatch(/balance is too low/);
+  });
+
+  const caps = { model: 'switchx', maxFrames: 240, maxRefs: 1, resolutions: [720, 1080], broll: ['h3' as const], references: false, director: true };
+
+  it('adopts the server limits when a project goes live, and cuts shorter shots for the public SwitchX', () => {
+    let p = connectLive(setSwitchSettings(planned(), { resolution: 2160 }), caps);
+    expect(p.pipeline).toBe('live');
+    expect(p.switchSettings).toMatchObject({ model: 'switchx', maxFrames: 240, maxRefs: 1, resolution: 1080 });
+    expect(p.messages.at(-1)?.text).toMatch(/Live: the switch runs on SwitchX, up to 10 seconds a shot/);
+    expect(connectLive(p, caps)).toBe(p);
+    p = runAgent(approvePlan(p));
+    // No reference generator on the server: the looks step passes straight through, and the switch is a live job.
+    expect(p.plates).toBe('approved');
+    expect(p.job).toMatchObject({ stage: 'switch', external: true });
+    expect(p.shots.length).toBeGreaterThan(0);
+    for (const s of p.shots) expect(s.frames).toBeLessThanOrEqual(240);
+  });
+
+  it('keeps samples and already-switched projects in demo mode', () => {
+    const sample = buildSampleProjects()[0];
+    expect(connectLive(sample, caps)).toBe(sample);
+    const switched = settleAuto(approvePlan(planned()));
+    expect(switched.shots.length).toBeGreaterThan(0);
+    expect(connectLive(switched, caps)).toBe(switched);
+  });
+
+  it('skips b-roll with a note when the server has no b-roll provider', () => {
+    let p = connectLive(planned(), { ...caps, broll: [] });
+    p = { ...approvePlan(p), plates: 'approved' as const };
+    p = startSwitch(p);
+    for (const s of p.shots) p = updateShot(p, s.id, { status: 'ready', progress: 1 });
+    p = runAgent(switchProgress(p));
+    expect(p.skipped).toContain('broll');
+    expect(p.messages.some((m) => /B-roll isn't set up/.test(m.text))).toBe(true);
+    expect(currentStage(p)?.id).toBe('edit');
+  });
+
+  it('picks a live switch back up after a reload', () => {
+    let p = connectLive(planned(), caps);
+    p = startSwitch({ ...approvePlan(p), plates: 'approved' as const });
+    const reloaded: Project = { ...p, job: undefined };
+    const resumed = resumeSwitch(reloaded);
+    expect(resumed.job).toMatchObject({ stage: 'switch', external: true });
+    expect(resumeSwitch(resumed)).toBe(resumed);
+    expect(resumeSwitch(planned())).toEqual(expect.objectContaining({ job: undefined }));
+  });
+
+  it('gives the director a compact, accurate picture of the project', () => {
+    const p = settleAuto(approvePlan(planned()));
+    const s = summarize(p) as { stage: { id: string }; switch: { shots: number; approved: number }; song: { sections: unknown[] }; takes: unknown[] };
+    expect(s.stage.id).toBe(currentStage(p)?.id);
+    expect(s.switch.shots).toBe(p.shots.length);
+    expect(s.song.sections).toHaveLength(p.song!.sections.length);
+    expect(s.takes).toHaveLength(p.takes.length);
+    expect(JSON.stringify(s).length).toBeLessThan(6000);
+    expect(recentChat(p, 4)).toHaveLength(4);
+    expect(recentChat(p).every((m) => m.from === 'user' || m.from === 'director')).toBe(true);
   });
 
   it('finishes an external job the same way the simulation would', () => {

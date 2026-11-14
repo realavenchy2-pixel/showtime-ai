@@ -17,6 +17,7 @@ import { currentStage, STAGE_BY_ID, stagesToRedo } from '@/engine/stages';
 import { useApp, useProject } from '@/engine/store';
 import type { Message, Project, StageId } from '@/engine/types';
 import { haptic } from '@/lib/haptics';
+import { sendToDirector, useServer } from '@/live/session';
 import { versionLabel } from '@/lib/preview';
 import { useRunAction } from '@/lib/useRunAction';
 import { color, gutter, maxWidth, radius, space } from '@/theme/tokens';
@@ -28,7 +29,7 @@ export default function StudioScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const project = useProject(id);
   const apply = useApp((s) => s.apply);
-  const send = useApp((s) => s.send);
+  const thinking = useServer((s) => (id ? !!s.thinking[id] : false));
   const runAction = useRunAction(id);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -67,8 +68,9 @@ export default function StudioScreen() {
     </Press>
   );
 
+  const mode = project.pipeline === 'live' ? 'live renders' : 'demo renders';
   const header = (
-    <Header title={project.title} kicker={project.isSample ? 'Sample video' : project.vibe ? `${project.vibe} video` : undefined} fallback="/" right={autopilot} />
+    <Header title={project.title} kicker={project.isSample ? 'Sample video' : project.vibe ? `${project.vibe} video, ${mode}` : undefined} fallback="/" right={autopilot} />
   );
   const player = <PlayerView project={project} label={versionLabel(project)} maxHeight={wide ? height - 220 : Math.round(height * 0.34)} />;
   const slate = <Slate project={project} expanded={expanded} onToggle={() => setExpanded((e) => !e)} onRevisit={setGoingBack} />;
@@ -82,10 +84,19 @@ export default function StudioScreen() {
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={<ActionBlock project={project} onAction={runAction} onWatchHow={() => router.push(`/tutorial/${stage?.id ?? 'song'}`)} />}
+        ListHeaderComponent={
+          <>
+            {thinking ? (
+              <T v="caption" c="smoke" style={styles.thinking} accessibilityLiveRegion="polite">
+                Director is thinking
+              </T>
+            ) : null}
+            <ActionBlock project={project} onAction={runAction} onWatchHow={() => router.push(`/tutorial/${stage?.id ?? 'song'}`)} />
+          </>
+        }
         renderItem={({ item, index }) => <Line message={item} prev={messages[index + 1]} project={project} />}
       />
-      <Composer onSend={(text) => send(project.id, text)} bottomInset={insets.bottom} />
+      <Composer onSend={(text) => sendToDirector(project.id, text)} bottomInset={insets.bottom} />
     </>
   );
 
@@ -183,6 +194,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: gutter,
     paddingVertical: space.l,
     gap: space.s,
+  },
+  thinking: {
+    paddingLeft: 44,
+    paddingBottom: space.s,
   },
   auto: {
     flexDirection: 'row',

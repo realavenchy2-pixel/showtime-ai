@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { Button } from '@/components/Button';
 import { Press } from '@/components/Press';
 import { Screen } from '@/components/Screen';
+import { ServerCard } from '@/components/ServerCard';
 import { T } from '@/components/T';
 import { showToast } from '@/components/Toast';
 import { useApp } from '@/engine/store';
@@ -35,6 +36,8 @@ export default function AccountScreen() {
         <Button label="Get credits" variant="secondary" onPress={() => router.push('/paywall')} />
       </View>
 
+      <ServerCard />
+
       <View>
         <Row icon={FileText} label="Plan" detail={plan} onPress={() => router.push('/paywall')} />
         <Row icon={Bell} label="Notifications" detail="When a stage is done" onPress={() => showToast('Notification settings come in the app build.')} />
@@ -42,7 +45,7 @@ export default function AccountScreen() {
       </View>
 
       <T v="caption" c="ash">
-        Prototype build. Videos, payments and AI jobs are simulated with sample data.
+        Recording, the cut, effects and export are real. The switch and b-roll are simulated until a studio server is connected. Payments are simulated.
       </T>
     </Screen>
   );

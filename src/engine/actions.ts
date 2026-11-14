@@ -14,6 +14,7 @@ import type {
   FxPackId,
   Format,
   Job,
+  LiveCaps,
   LocationKind,
   Message,
   Project,
@@ -161,7 +162,49 @@ export function setAutonomy(p: Project, autonomy: Autonomy): Project {
 
 export function setPipeline(p: Project, pipeline: Project['pipeline']): Project {
   if (p.pipeline === pipeline) return p;
-  return post({ ...p, pipeline }, 'system', pipeline === 'live' ? LIVE_NOTE : DEMO_NOTE);
+  return post({ ...p, pipeline, live: pipeline === 'live' ? p.live : undefined }, 'system', pipeline === 'live' ? LIVE_NOTE : DEMO_NOTE);
+}
+
+export function switchName(model: string): string {
+  const version = model.match(/(\d+\.\d+)/)?.[1];
+  return version ? `SwitchX ${version}` : 'SwitchX';
+}
+
+/**
+ * Points the project at the studio server and adopts its limits: shot length and reference count
+ * follow whichever SwitchX the key can run. Only before any shot has been switched.
+ */
+export function connectLive(p: Project, caps: LiveCaps): Project {
+  if (p.isSample || p.job || p.shots.length > 0) return p;
+  const same = p.pipeline === 'live' && p.live && JSON.stringify(p.live) === JSON.stringify(caps);
+  if (same) return p;
+  const top = Math.max(...caps.resolutions, 720);
+  const resolution = (p.switchSettings.resolution <= top ? p.switchSettings.resolution : top) as SwitchSettings['resolution'];
+  const settings: SwitchSettings = { ...p.switchSettings, model: caps.model, maxFrames: caps.maxFrames, maxRefs: caps.maxRefs, resolution };
+  const looks = Object.fromEntries(Object.entries(p.looks).map(([id, look]) => [id, { ...look, refs: look.refs.slice(0, caps.maxRefs) }]));
+  const model = p.broll.ideas.length && !caps.broll.includes(p.broll.ideas[0].model) && caps.broll.length ? caps.broll[0] : undefined;
+  const broll = model ? { ...p.broll, ideas: p.broll.ideas.map((i) => ({ ...i, model })) } : p.broll;
+  const next: Project = { ...p, pipeline: 'live', live: caps, switchSettings: settings, looks, broll };
+  const secs = Math.floor(caps.maxFrames / RECORD_FPS);
+  const parts = [`Live: the switch runs on ${switchName(caps.model)}, up to ${secs} seconds a shot.`];
+  if (caps.broll.length === 0) parts.push('B-roll is not set up on the server yet.');
+  if (caps.director) parts.push('Claude is directing.');
+  return post(next, 'system', parts.join(' '));
+}
+
+/** Back to simulated renders, e.g. when the server is disconnected. */
+export function disconnectLive(p: Project): Project {
+  if (p.pipeline !== 'live' || p.job || p.shots.length > 0) return p;
+  return post({ ...p, pipeline: 'demo', live: undefined }, 'system', DEMO_NOTE);
+}
+
+/** True when this stage's job runs on the studio server instead of the simulation. */
+export function liveStage(p: Project, stage: StageId): boolean {
+  if (p.pipeline !== 'live' || !p.live) return false;
+  if (stage === 'switch') return true;
+  if (stage === 'broll') return p.live.broll.length > 0;
+  if (stage === 'looks') return p.live.references;
+  return false;
 }
 
 // ---------- Shoot ----------
@@ -294,6 +337,9 @@ const RHYTHMS: [number, number][] = [
   [4, 1],
 ];
 
+/** Nothing shorter than this goes to the switch or into the cut on its own. */
+export const MIN_SHOT_SEC = 1;
+
 /**
  * Cuts the song on the bar grid and picks a take for every shot.
  * Hooks cut faster and favor the low angle; a take is never used twice in a row when another one covers the shot.
@@ -340,7 +386,8 @@ export function buildCut(p: Project, seed = p.cut.seed): CutSegment[] {
         const pick =
           signature ??
           (fresh.length ? fresh : pool).slice().sort((a, b) => waited(a) - waited(b) || rank(a) - rank(b) || a.n - b.n)[0];
-        const takeId = pick?.id ?? '';
+        // A piece too short to be a shot on its own is left uncovered instead of becoming a sliver.
+        const takeId = to - from >= MIN_SHOT_SEC ? (pick?.id ?? '') : '';
         const last = segments[segments.length - 1];
         if (last && !takeId && !last.takeId && last.sectionId === section.id) {
           last.end = round(to);
@@ -467,7 +514,11 @@ export function approvePlan(p: Project): Project {
 export function makePlates(p: Project): Project {
   const sections = p.song?.sections ?? [];
   if (p.job || !p.planApproved || p.plates !== 'none' || !sections.every((s) => p.looks[s.id])) return p;
-  return startJob(p, 'looks', 'Building a reference frame for each look', 3200);
+  if (p.pipeline === 'live' && !liveStage(p, 'looks')) {
+    // No reference generator on the server: SwitchX works from the prompts and the artist's own images.
+    return { ...p, plates: 'ready' };
+  }
+  return startJob(p, 'looks', 'Building a reference frame for each look', 3200, liveStage(p, 'looks'));
 }
 
 export function approvePlates(p: Project): Project {
@@ -525,7 +576,13 @@ export function startSwitch(p: Project, opts: { external?: boolean } = {}): Proj
   if (p.plates !== 'approved' || p.job || p.shots.length > 0) return p;
   const shots = buildShots(p);
   if (shots.length === 0) return p;
-  return startJob({ ...p, shots }, 'switch', `Switching ${shots.length} shots, ${SWITCHX.concurrency} at a time`, 0, opts.external);
+  return startJob({ ...p, shots }, 'switch', `Switching ${shots.length} shots, ${SWITCHX.concurrency} at a time`, 0, opts.external ?? liveStage(p, 'switch'));
+}
+
+/** After a reload: picks a live switch back up where its shots left off. */
+export function resumeSwitch(p: Project): Project {
+  if (p.job || !liveStage(p, 'switch') || !p.shots.some((s) => s.status === 'queued' || s.status === 'rendering')) return p;
+  return startJob(p, 'switch', 'Picking the switch back up', 0, true);
 }
 
 export function approveShot(p: Project, shotId: string): Project {
@@ -548,7 +605,7 @@ export function redoShot(p: Project, shotId: string, opts: { external?: boolean 
     ),
   };
   next = post(next, 'director', `Redoing shot ${shot.n}. Same look, new seed.`, { stage: 'switch' });
-  if (!next.job) next = startJob(next, 'switch', `Redoing shot ${shot.n}`, 0, opts.external);
+  if (!next.job) next = startJob(next, 'switch', `Redoing shot ${shot.n}`, 0, opts.external ?? liveStage(p, 'switch'));
   return next;
 }
 
@@ -631,10 +688,14 @@ export function addBrollIdea(p: Project, shot: string, fromInbox = false): Proje
 export function generateBroll(p: Project, opts: { external?: boolean } = {}): Project {
   const count = p.broll.ideas.filter((i) => i.keep && i.status === 'idea').length;
   if (count === 0 || p.job || p.broll.approved) return p;
-  return startJob(p, 'broll', `Generating ${count} b-roll ${count === 1 ? 'clip' : 'clips'}`, 4200, opts.external);
+  if (p.pipeline === 'live' && !liveStage(p, 'broll')) {
+    const noted = post(p, 'director', "B-roll isn't set up on your studio server yet, so I'm cutting without it.", { stage: 'broll' });
+    return skipStage(noted, 'broll');
+  }
+  return startJob(p, 'broll', `Generating ${count} b-roll ${count === 1 ? 'clip' : 'clips'}`, 4200, opts.external ?? liveStage(p, 'broll'));
 }
 
-export function updateBroll(p: Project, ideaId: string, patch: Partial<Pick<BrollIdea, 'status' | 'remoteId' | 'url' | 'mediaId'>>): Project {
+export function updateBroll(p: Project, ideaId: string, patch: Partial<Pick<BrollIdea, 'status' | 'keep' | 'remoteId' | 'url' | 'mediaId'>>): Project {
   return { ...p, broll: { ...p.broll, ideas: p.broll.ideas.map((i) => (i.id === ideaId ? { ...i, ...patch } : i)) } };
 }
 

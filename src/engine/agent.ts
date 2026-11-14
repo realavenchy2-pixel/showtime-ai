@@ -325,7 +325,12 @@ function smallTalk(p: Project, input: string): string {
 export function respond(p: Project, input: string): Project {
   const text = input.trim();
   if (!text) return p;
-  let next = addUserMessage(p, text);
+  return replyLocally(addUserMessage(p, text), text);
+}
+
+/** The built-in director's answer to a line that is already in the chat. */
+export function replyLocally(p: Project, text: string): Project {
+  let next = p;
   const commands = parseCommands(text, next);
   if (commands.length === 0) return addDirectorMessage(next, smallTalk(next, text));
   const notes: string[] = [];
