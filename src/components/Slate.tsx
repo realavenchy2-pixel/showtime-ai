@@ -94,7 +94,7 @@ export function Slate({ project, expanded, onToggle, onRevisit }: Props) {
             <T v="title" numberOfLines={1}>
               {title}
             </T>
-            <T v="caption" c={working ? 'tungsten' : 'smoke'} numberOfLines={1}>
+            <T v="caption" c={working ? 'accent' : 'smoke'} numberOfLines={1}>
               {statusLine(project)}
             </T>
           </View>

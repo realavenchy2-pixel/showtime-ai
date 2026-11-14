@@ -2,12 +2,12 @@
 
 # Showtime AI
 
-An AI music video studio. The artist records to the beat, and a director in the chat walks them through 11 stages to an exported video. Phase 1 is a prototype on sample data; every provider job is simulated in `src/engine`.
+A music video agent. The artist records with the song playing (or uploads clips) and the director runs eight stages to an exported video: song, shoot, cut, looks, switch, b-roll, edit, export. Recording, the cut, effects and export are real on the web app. The switch, b-roll and Claude go live through the studio server in `server/`; without one they are simulated in `src/engine`. Read `docs/BUILD_NOTES.md` first and keep its checklist current.
 
 ## Before you call a task done
 
 ```bash
-npm test            # engine tests (vitest)
+npm test            # engine, media and server tests (vitest)
 npm run typecheck
 npm run export:web  # when a change touches web-only files or app.json
 ```
@@ -16,13 +16,14 @@ npm run export:web  # when a change touches web-only files or app.json
 
 - `src/engine` has no UI imports. Project state changes only through the pure transitions in `actions.ts`; screens call `useApp().apply(id, fn)` with one of them.
 - Every transition that finishes a stage posts a director message, and `withIntro` posts the next stage's intro. Keep the director's voice: plain, confident, one idea per message.
-- Provider limits live in `actions.ts` (`FPS`, `MAX_SHOT_FRAMES`, `SWITCH_CONCURRENCY`, `HANDLE_SEC`). They mirror Beeble SwitchX. Don't change them without checking the provider.
+- Provider limits live in `switchx.ts` and mirror Beeble SwitchX; a live project takes its limits from the server (`connectLive`). Don't change them without checking the provider.
+- The director acts only through `AgentCommand` (`agent.ts`). The server's Claude tool mirrors that list; a server test fails if they drift.
 - Add or update a test in `src/engine/__tests__` for any engine change.
 
 ## Design rules
 
 - Use the tokens in `src/theme/tokens.ts`. Don't add colors.
-- Tungsten (`color.tungsten`) is only for the one thing to do now. REC red is only for recording.
+- Showtime pink (`color.accent`) is only for the one thing to do now. REC red is only for recording.
 - Display type is Big Shoulders Display through the `T` component (`display`, `title`, `label`); body text is the system font.
 - Pressables use `Press`, which scales to 0.97 in 120 ms. Buttons use `Button` (primary, secondary, quiet).
 - Copy is sentence case and says what happens: "Start recording", "Approve all 30 shots".
@@ -35,4 +36,4 @@ npm run export:web  # when a change touches web-only files or app.json
 
 ## Secrets
 
-No API keys in the app, ever. Phase 2 adds a server that holds the keys and runs the jobs.
+No API keys in the app or the repo, ever. The studio server holds them; the app holds only the server address and an access code.

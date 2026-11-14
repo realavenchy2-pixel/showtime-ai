@@ -29,7 +29,7 @@ export function ActionBlock({ project, onAction, onWatchHow }: Props) {
           <T v="callout" style={styles.flex} numberOfLines={2}>
             {job.label}
           </T>
-          <T v="label" c="tungsten">{`${pct}%`}</T>
+          <T v="label" c="accent">{`${pct}%`}</T>
         </View>
         <View style={styles.track}>
           <View style={[styles.fill, { width: `${pct}%` }]} />
@@ -90,6 +90,6 @@ const styles = StyleSheet.create({
   fill: {
     height: 4,
     borderRadius: 2,
-    backgroundColor: color.tungsten,
+    backgroundColor: color.accent,
   },
 });

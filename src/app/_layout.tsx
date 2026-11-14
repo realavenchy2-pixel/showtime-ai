@@ -20,8 +20,8 @@ const theme = {
     card: color.curtain,
     text: color.chalk,
     border: color.hairline,
-    primary: color.tungsten,
-    notification: color.tungsten,
+    primary: color.accent,
+    notification: color.accent,
   },
 };
 

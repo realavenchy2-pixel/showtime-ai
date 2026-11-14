@@ -377,10 +377,10 @@ export class Compositor {
         g.fillStyle = '#F2F0EC';
         g.fillText(text, x, y);
         if (i === rows.length - 1) {
-          // The newest word lands in tungsten and settles to white.
+          // The newest word lands in accent and settles to white.
           const before = row.slice(0, -1).join(' ');
           const wx = x + (before ? g.measureText(`${before} `).width : 0);
-          g.fillStyle = `rgba(237,180,95,${0.35 + 0.65 * pop})`;
+          g.fillStyle = `rgba(253,27,85,${0.35 + 0.65 * pop})`;
           g.fillText(row[row.length - 1], wx, y);
         }
       });

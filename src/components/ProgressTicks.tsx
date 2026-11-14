@@ -8,7 +8,7 @@ interface Props {
   height?: number;
 }
 
-/** One tick per stage: chalk when done, tungsten where the work is. */
+/** One tick per stage: chalk when done, accent where the work is. */
 export function ProgressTicks({ view, height = 4 }: Props) {
   return (
     <View style={styles.wrap} accessibilityLabel={`${view.completed} of ${view.total} stages done`}>
@@ -23,7 +23,7 @@ export function ProgressTicks({ view, height = 4 }: Props) {
               s.status === 'done' && { backgroundColor: color.chalk },
               s.status === 'skipped' && { backgroundColor: color.ash },
               s.status === 'locked' && { backgroundColor: color.rig },
-              active && { backgroundColor: color.tungstenSoft },
+              active && { backgroundColor: color.accentSoft },
             ]}>
             {active ? (
               <View
@@ -31,7 +31,7 @@ export function ProgressTicks({ view, height = 4 }: Props) {
                   width: s.status === 'working' ? `${Math.max(6, Math.round((s.progress ?? 0) * 100))}%` : '100%',
                   height,
                   borderRadius: height / 2,
-                  backgroundColor: color.tungsten,
+                  backgroundColor: color.accent,
                 }}
               />
             ) : null}

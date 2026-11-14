@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { Plus } from '@/components/icons';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, Image, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
@@ -35,9 +35,7 @@ export default function VideosScreen() {
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={styles.topRow}>
-              <T v="display" accessibilityRole="header">
-                Showtime
-              </T>
+              <Image source={require('../../../assets/images/logo-lockup.png')} style={styles.logo} resizeMode="contain" accessibilityRole="header" accessibilityLabel="Showtime AI" />
               <Press onPress={() => router.push('/paywall')} style={styles.credits} accessibilityLabel={`${credits} video credits. Get more`}>
                 <T v="label" c="chalk">
                   {String(credits)}
@@ -92,7 +90,7 @@ function ProjectTile({ project }: { project: Project }) {
           {project.title}
         </T>
         <ProgressTicks view={view} height={3} />
-        <T v="caption" c={view.currentStatus === 'working' ? 'tungsten' : 'smoke'} numberOfLines={2}>
+        <T v="caption" c={view.currentStatus === 'working' ? 'accent' : 'smoke'} numberOfLines={2}>
           {statusLine(project)}
         </T>
       </View>
@@ -122,6 +120,11 @@ const styles = StyleSheet.create({
   header: {
     paddingTop: space.l,
     gap: space.l,
+  },
+  logo: {
+    width: 190,
+    height: 57,
+    marginLeft: -6,
   },
   topRow: {
     flexDirection: 'row',

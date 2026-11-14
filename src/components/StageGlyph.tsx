@@ -28,7 +28,7 @@ export function Spinner({ size = 18 }: { size?: number }) {
     <Animated.View
       accessibilityLabel="Working"
       style={[
-        { width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: color.tungstenSoft, borderTopColor: color.tungsten },
+        { width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: color.accentSoft, borderTopColor: color.accent },
         style,
       ]}
     />
@@ -48,12 +48,12 @@ export function StageGlyph({ status, size = 20 }: { status: StageStatus; size?: 
       return <Spinner size={size} />;
     case 'needs_you':
       return (
-        <View style={[styles.circle, { width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: color.tungsten }]} accessibilityLabel="Needs you">
-          <View style={{ width: size * 0.36, height: size * 0.36, borderRadius: size, backgroundColor: color.tungsten }} />
+        <View style={[styles.circle, { width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: color.accent }]} accessibilityLabel="Needs you">
+          <View style={{ width: size * 0.36, height: size * 0.36, borderRadius: size, backgroundColor: color.accent }} />
         </View>
       );
     case 'current':
-      return <View style={[styles.circle, { width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: color.tungsten }]} accessibilityLabel="Up next" />;
+      return <View style={[styles.circle, { width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: color.accent }]} accessibilityLabel="Up next" />;
     case 'skipped':
       return (
         <View style={[styles.circle, { width: size, height: size }]} accessibilityLabel="Skipped">

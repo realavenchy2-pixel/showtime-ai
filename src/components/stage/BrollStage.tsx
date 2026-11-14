@@ -80,7 +80,7 @@ export function BrollStage({ project }: { project: Project }) {
                 {`${idea.at !== undefined ? `${formatTime(idea.at)}, ` : ''}${idea.lyric}`}
               </T>
               <T v="callout">{idea.shot}</T>
-              <T v="caption" c={idea.status === 'clip' ? 'tungsten' : 'ash'}>{`${STATE[idea.status]}, ${Math.round(idea.durationSec)} s, ${idea.model === 'omni' ? 'Gemini Omni' : 'MiniMax H3'}`}</T>
+              <T v="caption" c={idea.status === 'clip' ? 'accent' : 'ash'}>{`${STATE[idea.status]}, ${Math.round(idea.durationSec)} s, ${idea.model === 'omni' ? 'Gemini Omni' : 'MiniMax H3'}`}</T>
             </View>
             <Toggle value={idea.keep} onChange={() => apply(project.id, (p) => toggleBrollKeep(p, idea.id))} label={`Keep b-roll: ${idea.shot}`} disabled={wrapped || working} />
           </Press>

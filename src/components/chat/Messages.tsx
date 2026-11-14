@@ -303,6 +303,6 @@ const styles = StyleSheet.create({
   },
   cellFlag: {
     borderWidth: 2,
-    borderColor: color.tungsten,
+    borderColor: color.accent,
   },
 });

@@ -49,7 +49,10 @@ Keep the checklist current. A session can end without warning.
 - [x] Export on device (web)
 - [x] Studio, plan card, Switch screen modeled on SwitchX
 - [x] Deployed to gh-pages (first v2 build)
-- [ ] Phone fix: song starts after the count-in and during export (primed inside the tap); verify, commit, redeploy
-- [ ] Export verified with a real file check
-- [ ] Server and live wiring (SwitchX 3.0 through the Product API, public SwitchX API as fallback, Claude director and edit)
+- [x] Phone fix: song starts after the count-in and during export (primed inside the tap)
+- [x] Export verified with a real file check (headless run drops frames at 1080p; an offline frame-by-frame export is the fix)
+- [x] Server (`server/`) and live wiring (`src/live/`): SwitchX 3.0 through the Product API, public API fallback, Claude director, fal H3 b-roll. Verified end to end against stand-in providers (`tools/e2e_live.py` + `tools/mock_studio.mjs` in the scratchpad), not yet against real keys
+- [x] Brand: the artist's pink S logo, accent `#FD1B55` (icons are upscaled from a 300 px crop; ask for the vector)
+- [ ] First run with real keys: `npm run server:doctor`, then one short switch
+- [ ] Offline export (every frame, any device speed), generated reference frames, Select/custom mattes, native live switch
 - [ ] v2 merged to main

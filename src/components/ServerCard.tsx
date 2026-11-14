@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.ash,
   },
   lampOn: {
-    backgroundColor: color.tungsten,
+    backgroundColor: color.accent,
   },
   lampOff: {
     backgroundColor: color.rig,

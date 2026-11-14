@@ -19,7 +19,7 @@ interface Props {
 }
 
 /**
- * Primary is the one big tungsten button: what to do next. A screen shows at most one.
+ * Primary is the one big accent button: what to do next. A screen shows at most one.
  * Secondary and quiet carry everything else.
  */
 export function Button({ label, onPress, variant = 'primary', icon: Icon, disabled, busy, style, accessibilityHint }: Props) {
@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
   },
   primary: {
     minHeight: 58,
-    backgroundColor: color.tungsten,
+    backgroundColor: color.accent,
   },
   secondary: {
     borderWidth: 1,

@@ -62,7 +62,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "export:web": "expo export -p web && node scripts/postbuild-web.mjs dist",
-    "build:pages": "SHOWTIME_BASE_URL=/showtime-ai expo export -p web && node scripts/postbuild-web.mjs dist /showtime-ai"
+    "build:pages": "SHOWTIME_BASE_URL=/showtime-ai expo export -p web && node scripts/postbuild-web.mjs dist /showtime-ai",
+    "server": "node server/node.mjs",
+    "server:doctor": "node server/doctor.mjs"
   },
   "private": true
 }

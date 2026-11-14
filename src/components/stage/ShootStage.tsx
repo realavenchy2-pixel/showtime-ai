@@ -142,7 +142,7 @@ function TakeRow({ take, locked, onRemove }: { take: Take; locked: boolean; onRe
         </T>
         <T v="caption" c="smoke" numberOfLines={1}>{`${formatTime(take.start)} to ${formatTime(take.end)}, ${how}`}</T>
         {take.flag ? (
-          <T v="caption" c="tungsten" numberOfLines={2}>
+          <T v="caption" c="accent" numberOfLines={2}>
             {take.flag}
           </T>
         ) : null}

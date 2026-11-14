@@ -1,70 +1,56 @@
 # Showtime AI
 
-The AI music video studio. Record your verse to the beat, pick where the video takes place, add effects, and export, with a director in the chat walking you through every stage.
+The music video agent. The artist records with the song playing, or uploads clips they already shot. The director takes it from there: sorts the takes, cuts on the beat, moves every shot into a new world with Beeble SwitchX, adds b-roll, edits with effects on the beat, and exports.
 
-This repo is **Phase 1: a clickable prototype of the whole flow on sample data.** Nothing calls a paid API yet. Every render is simulated with the same limits the real providers have.
+**Web app:** https://realavenchy2-pixel.github.io/showtime-ai/ (open it on a phone and add it to the home screen).
+
+## What is real today
+
+| Step | State |
+| --- | --- |
+| Song import, beat and section mapping | Real, on the device |
+| Recording with the song playing, takes lined up by sound | Real (web app) |
+| Uploading clips, lining them up, chopping to shot length | Real (web app) |
+| Cut on the beat, live player, effects on the beat | Real |
+| Export to a video file | Real, rendered on the device (web app) |
+| Switch (SwitchX 3.0, or the public SwitchX when a key lacks 3.0) | Built and tested against stand-in providers. Goes live when the studio server has keys |
+| B-roll (MiniMax H3, Gemini Omni), Claude as director | Same as the switch |
+| Payments, accounts | Simulated |
+
+The phone app (Expo) shares every screen with the web app. Its recorder is written but not yet tested on a device, and the live switch runs from the web app for now.
 
 ## Run it
 
-**On a laptop or Chromebook (Linux):**
-
 ```bash
 npm install
-npm run web
+npm run web          # http://localhost:8081
+npm run tunnel       # phone, through Expo Go
 ```
 
-Then open http://localhost:8081.
+## Turn on the AI
 
-**On your phone with Expo Go:**
-
-```bash
-npm install
-npm run tunnel
-```
-
-Scan the QR code with the Expo Go app on Android, or with the Camera app on iPhone. The live camera and haptics only work on a phone.
-
-## What's in the prototype
-
-- The 11 stages: song, record, rough cut, location, switch, genjutsu (optional), b-roll (optional), VFX, final, resize, export.
-- The slate tracker at the top of every project. It claps when a stage finishes, and any finished stage can be reopened.
-- The director chat. It says what's next, answers questions about time, cost, skipping and redoing, and files ideas into the right stage.
-- The recorder: a count-in on the beat, a lyric prompter and the take plan.
-- Three sample projects: *Out the Mud* (mid-switch), *Late Night Freestyle* (recording) and *Windy City* (finished).
-- Tutorials, credits, plans and the paywall (purchases are simulated).
-
-## What's simulated
-
-| In the prototype | In Phase 2 |
-| --- | --- |
-| Takes are saved as data, not video | Real takes uploaded and lined up with the song |
-| Track mapping on a timer | Beat and section detection, lyric timing |
-| Plates, switch, swaps, b-roll | Beeble SwitchX, GPT Image plates, Higgsfield, Google Omni or H3 |
-| Effects, final, resize, export | The render pipeline, Beeble resize, Topaz upscale |
-| Credits and plans | Stripe |
-
-The switch already plays by the real rules: shots are cut every 4 bars, each shot is capped at 240 frames at 24 fps, and 5 render at a time.
-
-## Phase 2
-
-API keys never go in the app. Phase 2 adds a small server that holds the keys and runs the jobs. The app keeps its screens: each simulated job in `src/engine/actions.ts` (`advance`) becomes a server job that reports progress through the same transitions.
+Deploy the studio server and give it your keys: see [server/README.md](server/README.md). Keys never go in the app or in this repo.
 
 ## Project map
 
 ```
 src/app/          screens (Expo Router)
-src/engine/       stage machine, director, sample data and tests (no UI)
-src/components/   slate tracker, chat, recorder and stage screens
-src/theme/        colors, type and spacing
-src/lib/          helpers shared by screens
+src/engine/       stages, the director agent, cut, shots, effects cues, tests (no UI)
+src/media/        song analysis, sync, recorder, player, export
+src/live/         the connection to the studio server and the live job runner
+src/components/   slate tracker, chat, recorder, stage screens
+server/           the studio server: Beeble, Claude, fal
+docs/BUILD_NOTES.md   decisions, provider facts, what is left
 ```
 
 ## Commands
 
 ```bash
-npm run web          # web preview
-npm run tunnel       # phone preview through Expo Go
-npm test             # engine tests
-npm run typecheck    # TypeScript
-npm run export:web   # build the web version into dist/
+npm test             # engine, media and server tests
+npm run typecheck
+npm run lint
+npm run export:web   # web build into dist/
+npm run build:pages  # web build for the GitHub Pages link
+npm run server       # studio server on Node
+npm run server:doctor  # check your keys without spending anything
 ```

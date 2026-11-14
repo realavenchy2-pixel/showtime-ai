@@ -89,7 +89,7 @@ export function SwitchStage({ project }: { project: Project }) {
             <View style={stageStyles.row}>
               <View style={stageStyles.flex}>
                 <T v="heading">{`Shot ${shot.n} of ${shots.length}${section ? `, ${section.label}` : ''}`}</T>
-                <T v="caption" c={shot.flag || shot.status === 'failed' ? 'tungsten' : 'smoke'}>
+                <T v="caption" c={shot.flag || shot.status === 'failed' ? 'accent' : 'smoke'}>
                   {shot.status === 'failed' ? shot.error ?? "It didn't render" : shot.flag ?? shotState(shot)}
                 </T>
               </View>
@@ -222,7 +222,7 @@ function ShotTile({ shot, selected, onPress }: { shot: Shot; selected: boolean; 
       <T v="callout" c={shot.status === 'queued' ? 'ash' : 'chalk'}>
         {String(shot.n)}
       </T>
-      {Icon ? <Icon size={12} color={flagged ? color.tungsten : shot.status === 'approved' ? color.chalk : color.ash} /> : <View style={styles.dot} />}
+      {Icon ? <Icon size={12} color={flagged ? color.accent : shot.status === 'approved' ? color.chalk : color.ash} /> : <View style={styles.dot} />}
     </Press>
   );
 }
@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
     borderColor: color.chalk,
   },
   tileFlag: {
-    borderColor: color.tungsten,
+    borderColor: color.accent,
   },
   tileFill: {
     position: 'absolute',

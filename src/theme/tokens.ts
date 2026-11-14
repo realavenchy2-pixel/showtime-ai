@@ -2,7 +2,7 @@ import { Platform, type TextStyle } from 'react-native';
 
 // Showtime AI design tokens.
 // Look: a stage at night. True black so the video owns the screen, warm graphite surfaces,
-// chalk-white type, and one tungsten-amber accent that only ever marks "what to do now".
+// chalk-white type, and one accent-amber accent that only ever marks "what to do now".
 // Headlines use Big Shoulders Display, drawn from Chicago street signage; everything you read
 // uses the phone's own system font.
 
@@ -24,10 +24,10 @@ export const color = {
   /** Tertiary text, disabled. */
   ash: '#6F6A64',
   /** The accent: the one action to take, the stage you're on, progress. */
-  tungsten: '#EDB45F',
-  tungstenSoft: 'rgba(237, 180, 95, 0.14)',
-  /** Text on tungsten. */
-  ink: '#1A1206',
+  accent: '#FD1B55',
+  accentSoft: 'rgba(253, 27, 85, 0.16)',
+  /** Text on accent. */
+  ink: '#FFFFFF',
   /** Recording only. */
   rec: '#FF453A',
   scrim: 'rgba(0, 0, 0, 0.55)',
