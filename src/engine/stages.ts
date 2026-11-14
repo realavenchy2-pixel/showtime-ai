@@ -1,34 +1,25 @@
-import type { ActId, Project, StageId, StageStatus } from './types';
+import type { Project, StageId, StageStatus } from './types';
 
 export interface StageDef {
   id: StageId;
   n: number;
-  act: ActId;
   title: string;
   optional: boolean;
-  /** What the user does at this stage, in their words. */
+  /** Who moves the stage forward: the artist, or the director on its own. */
+  owner: 'artist' | 'director';
+  /** What happens at this stage, in the artist's words. */
   summary: string;
 }
 
-export const ACTS: { id: ActId; title: string }[] = [
-  { id: 'shoot', title: 'Shoot' },
-  { id: 'set', title: 'Set' },
-  { id: 'style', title: 'Style' },
-  { id: 'ship', title: 'Ship' },
-];
-
 export const STAGES: StageDef[] = [
-  { id: 'song', n: 1, act: 'shoot', title: 'Song', optional: false, summary: 'Upload the track, pick a vibe and formats' },
-  { id: 'record', n: 2, act: 'shoot', title: 'Record', optional: false, summary: 'Rap along to the song, as many takes as you want' },
-  { id: 'roughcut', n: 3, act: 'shoot', title: 'Rough cut', optional: false, summary: 'Approve the performance cut on the beat' },
-  { id: 'location', n: 4, act: 'set', title: 'Location', optional: false, summary: 'Pick a look for each section of the song' },
-  { id: 'switch', n: 5, act: 'set', title: 'Switch', optional: false, summary: 'Review every shot in its new location' },
-  { id: 'genjutsu', n: 6, act: 'set', title: 'Genjutsu', optional: true, summary: 'Swap your mic, chain or fit' },
-  { id: 'broll', n: 7, act: 'style', title: 'B-roll', optional: true, summary: 'Keep the cutaways that match your lyrics' },
-  { id: 'vfx', n: 8, act: 'style', title: 'VFX', optional: false, summary: 'Pick an effects pack and how hard it hits' },
-  { id: 'final', n: 9, act: 'ship', title: 'Final edit', optional: false, summary: 'Watch the full video and lock it' },
-  { id: 'resize', n: 10, act: 'ship', title: 'Resize', optional: false, summary: 'Pick the formats you post to' },
-  { id: 'export', n: 11, act: 'ship', title: 'Export', optional: false, summary: 'Pick 1080p or 4K and download' },
+  { id: 'song', n: 1, title: 'Song', optional: false, owner: 'artist', summary: 'Bring the track, pick a vibe and where it posts' },
+  { id: 'shoot', n: 2, title: 'Shoot', optional: false, owner: 'artist', summary: 'Record with the song playing, or upload your clips' },
+  { id: 'cut', n: 3, title: 'Cut', optional: false, owner: 'director', summary: 'Takes sorted and cut on the beat' },
+  { id: 'looks', n: 4, title: 'Looks', optional: false, owner: 'artist', summary: 'Where each part of the song takes place' },
+  { id: 'switch', n: 5, title: 'Switch', optional: false, owner: 'director', summary: 'Every shot moved into its new world' },
+  { id: 'broll', n: 6, title: 'B-roll', optional: true, owner: 'director', summary: 'Cutaways that match your lyrics' },
+  { id: 'edit', n: 7, title: 'Edit', optional: false, owner: 'director', summary: 'Everything stitched to the song with effects on the beat' },
+  { id: 'export', n: 8, title: 'Export', optional: false, owner: 'artist', summary: 'Pick formats and quality, then download' },
 ];
 
 export const STAGE_BY_ID: Record<StageId, StageDef> = Object.fromEntries(
@@ -44,26 +35,20 @@ export function isStageDone(p: Project, id: StageId): boolean {
   switch (id) {
     case 'song':
       return !!p.song?.analyzed && !!p.vibe && p.formats.length > 0;
-    case 'record':
-      return p.takes.length > 0 && p.recordLocked;
-    case 'roughcut':
+    case 'shoot':
+      return p.takes.length > 0 && p.shootLocked;
+    case 'cut':
       return p.cut.segments.length > 0 && p.cut.locked;
-    case 'location': {
+    case 'looks': {
       const sections = p.song?.sections ?? [];
-      return sections.length > 0 && sections.every((s) => !!p.locations[s.id]) && p.plates === 'approved';
+      return sections.length > 0 && sections.every((s) => !!p.looks[s.id]) && p.plates === 'approved';
     }
     case 'switch':
       return p.shots.length > 0 && p.shots.every((s) => s.status === 'approved');
-    case 'genjutsu':
-      return p.genjutsu.status === 'done';
     case 'broll':
       return p.broll.approved;
-    case 'vfx':
-      return p.fx.locked;
-    case 'final':
+    case 'edit':
       return p.final.locked;
-    case 'resize':
-      return p.resize.done;
     case 'export':
       return p.exportState.done;
   }
@@ -78,21 +63,19 @@ export function currentStage(p: Project): StageDef | undefined {
   return STAGES.find((s) => !isStageDone(p, s.id) && !isSkipped(p, s.id));
 }
 
-/** Results are back and waiting for the user's approval. */
+/** Results are back and waiting for the artist. */
 export function needsReview(p: Project, id: StageId): boolean {
   switch (id) {
-    case 'roughcut':
+    case 'cut':
       return p.cut.segments.length > 0 && !p.cut.locked;
-    case 'location':
-      return p.plates === 'ready';
+    case 'looks':
+      return !p.planApproved || p.plates === 'ready';
     case 'switch':
-      return p.shots.length > 0 && p.shots.every((s) => s.status === 'ready' || s.status === 'approved');
-    case 'genjutsu':
-      return p.genjutsu.status === 'ready';
+      return p.shots.length > 0 && p.shots.every((s) => s.status === 'ready' || s.status === 'approved' || s.status === 'failed');
     case 'broll':
       return p.broll.ideas.some((i) => i.status === 'clip') && !p.broll.approved;
-    case 'final':
-      return p.final.renders > 0 && !p.final.locked;
+    case 'edit':
+      return p.final.builds > 0 && !p.final.locked;
     default:
       return false;
   }
@@ -143,7 +126,7 @@ export function trackerView(p: Project): TrackerView {
   };
 }
 
-/** Later stages that will have to be redone if the user goes back to `id`. */
+/** Later stages that will have to be redone if the artist goes back to `id`. */
 export function stagesToRedo(p: Project, id: StageId): StageDef[] {
   const from = STAGE_BY_ID[id].n;
   return STAGES.filter((s) => s.n > from && (isStageDone(p, s.id) || isSkipped(p, s.id)));

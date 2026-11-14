@@ -1,17 +1,20 @@
-import { routeIdea } from './ideas';
 import { locationTitle } from './samples';
-import { currentStage, stageDef, stageStatus } from './stages';
-import type { AttachmentKind, Project, StageId } from './types';
+import { currentStage, stageStatus } from './stages';
+import { SWITCHX } from './switchx';
+import type { AttachmentKind, Project, StageId, Take } from './types';
 
-// Scripted director for the prototype. The real director is Claude running the same stage
-// machine with tools; these lines show the voice and the one-next-step rule.
+// The director's voice: what it says when a stage opens, when a job comes back, and what the
+// one big button is. With the studio server connected Claude writes the chat replies; these
+// lines stay the same either way so the app reads the same in demo mode.
+
+export type RunCommand = 'finishShooting' | 'approvePlan' | 'makePlates' | 'startSwitch' | 'generateBroll' | 'buildEdit' | 'lockEdit' | 'skip';
 
 export interface NextAction {
   label: string;
   /** Screen to open: the recorder or a stage screen. */
   open?: 'record' | StageId;
   /** Command to run in the engine. */
-  run?: 'startSwitch' | 'renderFinal' | 'finishRecording' | 'skip';
+  run?: RunCommand;
 }
 
 export interface ActionSet {
@@ -20,9 +23,8 @@ export interface ActionSet {
 }
 
 export function formatTime(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  const total = Math.max(0, Math.round(sec));
+  return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`;
 }
 
 /** The one big button for where the project is right now. */
@@ -32,54 +34,37 @@ export function nextActions(p: Project): ActionSet {
   const status = stageStatus(p, stage.id);
   if (status === 'working') return { primary: null };
 
-  const skip: NextAction | undefined = stage.optional ? { label: `Skip ${stage.title}`, run: 'skip' } : undefined;
-
   switch (stage.id) {
     case 'song':
       return { primary: { label: 'Pick your song', open: 'song' } };
-    case 'record': {
-      const planned = p.takePlan.length;
+    case 'shoot': {
       const n = p.takes.length;
-      if (n === 0) return { primary: { label: 'Start recording', open: 'record' } };
-      if (n < planned) {
-        return {
-          primary: { label: `Record take ${n + 1}`, open: 'record' },
-          secondary: { label: 'Done recording', run: 'finishRecording' },
-        };
-      }
+      if (n === 0) return { primary: { label: 'Start recording', open: 'record' }, secondary: { label: 'Upload clips', open: 'shoot' } };
+      if (n === 1) return { primary: { label: 'Record take 2', open: 'record' }, secondary: { label: "That's a wrap, cut it", run: 'finishShooting' } };
+      return { primary: { label: "That's a wrap, cut it", run: 'finishShooting' }, secondary: { label: 'Record another take', open: 'record' } };
+    }
+    case 'cut':
+      return { primary: { label: 'Review the cut', open: 'cut' } };
+    case 'looks':
+      if (!p.planApproved) return { primary: { label: 'Run it', run: 'approvePlan' }, secondary: { label: 'Change the plan', open: 'looks' } };
+      if (p.plates === 'ready') return { primary: { label: 'Review references', open: 'looks' } };
+      return { primary: { label: 'Make reference frames', run: 'makePlates' } };
+    case 'switch': {
+      if (p.shots.length === 0) return { primary: { label: 'Start the switch', run: 'startSwitch' } };
+      const waiting = p.shots.filter((s) => s.status === 'ready' || s.status === 'failed').length;
+      return { primary: { label: waiting === 1 ? 'Review 1 shot' : `Review ${waiting} shots`, open: 'switch' } };
+    }
+    case 'broll': {
+      if (status === 'needs_you') return { primary: { label: 'Review b-roll', open: 'broll' } };
+      const n = p.broll.ideas.filter((i) => i.keep && i.status === 'idea').length;
       return {
-        primary: { label: 'Build my rough cut', run: 'finishRecording' },
-        secondary: { label: 'Record another take', open: 'record' },
+        primary: n ? { label: n === 1 ? 'Generate 1 clip' : `Generate ${n} clips`, run: 'generateBroll' } : { label: 'Pick b-roll', open: 'broll' },
+        secondary: { label: 'Skip b-roll', run: 'skip' },
       };
     }
-    case 'roughcut':
-      return { primary: { label: 'Review the cut', open: 'roughcut' } };
-    case 'location':
-      return {
-        primary: p.plates === 'ready' ? { label: 'Review plates', open: 'location' } : { label: 'Pick locations', open: 'location' },
-      };
-    case 'switch':
-      return {
-        primary: p.shots.length === 0 ? { label: 'Start the switch', run: 'startSwitch' } : { label: 'Review shots', open: 'switch' },
-      };
-    case 'genjutsu':
-      return {
-        primary: p.genjutsu.status === 'ready' ? { label: 'Review swaps', open: 'genjutsu' } : { label: 'See swap ideas', open: 'genjutsu' },
-        secondary: skip,
-      };
-    case 'broll':
-      return {
-        primary: status === 'needs_you' ? { label: 'Review b-roll', open: 'broll' } : { label: 'See b-roll ideas', open: 'broll' },
-        secondary: skip,
-      };
-    case 'vfx':
-      return { primary: { label: 'Pick a VFX pack', open: 'vfx' } };
-    case 'final':
-      return {
-        primary: p.final.renders === 0 ? { label: 'Render the final', run: 'renderFinal' } : { label: 'Watch the final', open: 'final' },
-      };
-    case 'resize':
-      return { primary: { label: 'Pick formats', open: 'resize' } };
+    case 'edit':
+      if (p.final.builds === 0) return { primary: { label: 'Build the edit', run: 'buildEdit' } };
+      return { primary: { label: 'Watch and tune the edit', open: 'edit' }, secondary: { label: 'Lock it', run: 'lockEdit' } };
     case 'export':
       return { primary: { label: 'Export the video', open: 'export' } };
   }
@@ -87,43 +72,37 @@ export function nextActions(p: Project): ActionSet {
 
 /** What the director says when a stage becomes the current one. */
 export function stageIntro(p: Project, id: StageId): { text: string; attachment?: AttachmentKind } {
-  const song = p.song;
   switch (id) {
     case 'song':
-      return { text: 'What are we shooting? Drop the track, pick the vibe, and tell me where it goes: YouTube, Reels or both.' };
-    case 'record':
+      return { text: 'What are we shooting? Bring the track, pick the vibe, and tell me where it posts.' };
+    case 'shoot':
       return {
-        text: 'Here is the take plan. Phone sideways, light on your face, mic in hand. I count you in on the beat every time.',
+        text: 'Your move. Record with the song playing, or upload clips you already shot. One full pass is enough to start; every extra take is another angle I can cut to.',
         attachment: 'takePlan',
       };
-    case 'roughcut':
+    case 'cut': {
+      const n = p.takes.length;
+      return { text: `${n} ${n === 1 ? 'take' : 'takes'} in. I'm sorting them and cutting on the beat.` };
+    }
+    case 'looks':
       return {
-        text: `That's ${p.takes.length} ${p.takes.length === 1 ? 'take' : 'takes'} in. I'm cutting the performance on the beat: a new shot every 4 bars, low angle on the hooks.`,
-      };
-    case 'location':
-      return {
-        text: 'Cut is locked. Now where are we? I pitched a look for each section: verses in the alley, hooks under the hanging mic. Change anything you want.',
+        text: "Here's the video I'd make. Change anything, then hit Run it and I take it from there.",
+        attachment: 'plan',
       };
     case 'switch': {
-      const shots = p.cut.segments.length;
+      const shots = p.cut.segments.filter((s) => s.takeId).length;
       return {
-        text: `Plates look right. Next I send every shot in the cut through the switch: ${shots} shots, 5 at a time. Only the seconds on screen get rendered.`,
+        text: `References are locked. Sending ${shots === 1 ? 'the shot' : `${shots} shots`} through SwitchX, ${SWITCHX.concurrency} at a time. Only the seconds on screen get rendered.`,
       };
     }
-    case 'genjutsu':
-      return { text: 'Want to swap anything in frame? Your mic, your chain, your fit. This one is optional.' };
-    case 'broll':
-      return { text: 'B-roll time. I matched cutaways to your lyrics. Keep the ones that hit, or skip it.' };
-    case 'vfx':
-      return {
-        text: `Pick your effects pack. I put every hit on the beat map${song ? ` at ${song.bpm} BPM` : ''}: zooms on snares, shakes on 808s, flashes on the drop.`,
-      };
-    case 'final':
-      return { text: 'Everything is in. I stitch the final next: master audio locked, b-roll and effects in place.' };
-    case 'resize':
-      return { text: 'Final is locked. Which formats are you posting to?' };
+    case 'broll': {
+      const n = p.broll.ideas.filter((i) => i.keep).length;
+      return { text: n ? `The switch is done. ${n} b-roll ${n === 1 ? 'cutaway is' : 'cutaways are'} next.` : 'The switch is done. No b-roll in the plan, so the edit is next.' };
+    }
+    case 'edit':
+      return { text: "Everything's in. I'm building the edit: cuts on the grid, b-roll placed, effects on the beat." };
     case 'export':
-      return { text: 'Last step. 1080p comes with every video. 4K costs one more credit.' };
+      return { text: 'Edit is locked. Pick where it posts and how sharp you want it.' };
   }
 }
 
@@ -133,30 +112,30 @@ export function jobResult(p: Project, stage: StageId): { text: string; attachmen
     case 'song': {
       const s = p.song;
       if (!s) return null;
-      return { text: `Track's mapped: ${s.bpm} BPM, ${s.sections.length} sections, ${formatTime(s.durationSec)}. Vocals split and lyrics timed to the beat.` };
+      const extra = s.source === 'demo' ? ' Lyrics are timed to the beat.' : '';
+      return { text: `Track's mapped: ${Math.round(s.bpm)} BPM, ${s.sections.length} sections, ${formatTime(s.durationSec)}.${extra}` };
     }
-    case 'roughcut':
-      return {
-        text: `Rough cut is ready: ${p.cut.segments.length} shots, all on the beat. Swap any shot you don't like, then lock it.`,
-        attachment: 'cutSummary',
-      };
-    case 'location':
-      return { text: 'Plates are ready. Each one is built from a real frame of your takes, so the light matches.' };
+    case 'cut': {
+      const shots = p.cut.segments.filter((s) => s.takeId).length;
+      const gaps = p.cut.segments.filter((s) => !s.takeId).reduce((sum, s) => sum + (s.end - s.start), 0);
+      const hole = gaps > 1 ? ` ${formatTime(gaps)} of the song has no take on it; I'll carry that part with b-roll and visuals unless you record more.` : '';
+      return { text: `Cut's done: ${shots} shots, all on the beat.${hole}`, attachment: 'cutSummary' };
+    }
+    case 'looks':
+      return { text: 'Reference frames are in. Each one is built from a real frame of your takes, so the light matches.' };
     case 'switch': {
       const flagged = p.shots.filter((s) => s.flag).length;
+      const failed = p.shots.filter((s) => s.status === 'failed').length;
+      const notes = [flagged ? `${flagged} ${flagged === 1 ? 'needs' : 'need'} a second look` : '', failed ? `${failed} didn't render` : ''].filter(Boolean).join(' and ');
       return {
-        text: `All ${p.shots.length} shots are back.${flagged ? ` ${flagged} need a second look before you approve.` : ''}`,
+        text: `All ${p.shots.length} shots are back.${notes ? ` ${notes[0].toUpperCase()}${notes.slice(1)}.` : ' Clean pass.'}`,
         attachment: 'shotsSummary',
       };
     }
-    case 'genjutsu':
-      return { text: 'Swaps are done. Check them before they go in the edit.' };
     case 'broll':
-      return { text: 'Your b-roll clips are back. Keep the ones that hit.' };
-    case 'final':
-      return { text: 'Final is rendered: audio synced to the master, b-roll and effects in. Watch it through.' };
-    case 'resize':
-      return { text: `Rendered ${p.resize.formats.length === 1 ? 'your format' : `${p.resize.formats.length} formats`}, laid out for each frame.` };
+      return { text: 'B-roll is back.' };
+    case 'edit':
+      return { text: "Edit's ready. Watch it through, tell me what to change, or lock it." };
     case 'export':
       return { text: "That's a wrap. Your video is ready to download.", attachment: 'wrap' };
     default:
@@ -164,59 +143,38 @@ export function jobResult(p: Project, stage: StageId): { text: string; attachmen
   }
 }
 
-const STAGE_WORD: Record<StageId, string> = {
+/** What the director says about a take that just landed. */
+export function takeLine(p: Project, take: Take): string {
+  const span = take.end - take.start;
+  const whole = !!p.song && span >= p.song.durationSec - 1;
+  const where = whole ? 'the full song' : `${formatTime(take.start)} to ${formatTime(take.end)}`;
+  const how =
+    take.sync === 'audio'
+      ? `Lined up with the song by ear${take.lagMs ? `, ${Math.abs(take.lagMs)} ms of lag removed` : ''}.`
+      : 'Lined up with the song by the recorder clock.';
+  const verb = take.source === 'upload' ? 'is in' : 'saved';
+  return `${take.label} ${verb}: ${where}. ${how}${take.flag ? ` ${take.flag}.` : ''}`;
+}
+
+export const STAGE_WORD: Record<StageId, string> = {
   song: 'the song',
-  record: 'recording',
-  roughcut: 'the rough cut',
-  location: 'locations',
+  shoot: 'the shoot',
+  cut: 'the cut',
+  looks: 'looks',
   switch: 'the switch',
-  genjutsu: 'Genjutsu',
-  broll: 'B-roll',
-  vfx: 'VFX',
-  final: 'the final edit',
-  resize: 'resize',
+  broll: 'b-roll',
+  edit: 'the edit',
   export: 'export',
 };
 
-export interface DirectorReply {
-  text: string;
-  idea?: StageId;
-}
-
-/** Reply to free text from the artist. Ideas get filed to the stage that uses them. */
-export function directorReply(p: Project, input: string): DirectorReply {
-  const text = input.trim().toLowerCase();
-  const stage = currentStage(p);
-  const actions = nextActions(p);
-  const next = actions.primary?.label;
-
-  if (/(how long|how much time|when.*done|eta)/.test(text)) {
-    return { text: p.job ? `${p.job.label}: about ${Math.max(1, Math.round(((1 - p.job.progress) * p.job.durationMs) / 1000))} seconds left in this prototype. In the real app I send a push alert when it's done.` : 'Nothing is rendering right now. Most steps take a few minutes in the real app, and I ping you when each one is done.' };
+export function lookSummary(p: Project): string {
+  const sections = p.song?.sections ?? [];
+  const groups = new Map<string, string[]>();
+  for (const s of sections) {
+    const look = p.looks[s.id];
+    if (!look) continue;
+    const title = locationTitle(look.location);
+    groups.set(title, [...(groups.get(title) ?? []), s.label]);
   }
-  if (/(cost|credit|price|how much)/.test(text)) {
-    return { text: 'This video uses 1 credit at Standard: 720p, upscaled to 1080p. Exporting in 4K adds 1 more.' };
-  }
-  if (/\bskip\b/.test(text)) {
-    if (stage?.optional) return { text: `Say less. Tap "Skip ${stage.title}" under my last message.` };
-    return { text: `${stage ? stage.title : 'This step'} can't be skipped. Everything after it builds on it.` };
-  }
-  if (/(redo|go back|change the|start over)/.test(text)) {
-    return { text: 'Tap any finished stage on the slate up top to go back. I will tell you what has to redo before anything changes.' };
-  }
-
-  const idea = routeIdea(input);
-  if (idea) {
-    const ideaStage = stageDef(idea);
-    const status = stageStatus(p, idea);
-    if (status === 'done' || status === 'skipped') {
-      return { idea, text: `Saved to your idea inbox. ${ideaStage.title} is already wrapped, so tap it on the slate if you want to go back and use it.` };
-    }
-    if (idea === 'location') {
-      const loc = /beach/.test(text) ? 'beach' : /alley/.test(text) ? 'alley' : null;
-      return { idea, text: `Filed under locations${loc ? `: ${locationTitle(loc)}` : ''}. I'll bring it back when we pick looks.` };
-    }
-    return { idea, text: `Filed under ${STAGE_WORD[idea]}. I'll bring it back when we get there.` };
-  }
-
-  return { text: next ? `Heard. When you're ready: ${next}.` : "Heard. I'm on it, I'll ping you when this step is done." };
+  return [...groups.entries()].map(([title, labels]) => `${title} for ${labels.length > 2 ? `${labels.length} sections` : labels.join(' and ')}`).join(', ');
 }

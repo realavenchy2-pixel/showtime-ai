@@ -1,15 +1,16 @@
 import type { StageId } from './types';
 
 // The director files ideas the artist drops in chat to the stage where they get used.
-// In the real app Claude does this; the prototype uses keyword rules with the same contract.
+// With the studio server connected Claude does this; without it these keyword rules do.
 
 const RULES: { stage: StageId; words: string[] }[] = [
   {
-    stage: 'genjutsu',
+    // Props and outfits are swapped by the switch, through the look's prompt and references.
+    stage: 'switch',
     words: ['mic', 'microphone', 'chain', 'chains', 'outfit', 'fit', 'jacket', 'hoodie', 'shoes', 'sneakers', 'grill', 'grills', 'glasses', 'shades', 'hat', 'watch', 'rings'],
   },
   {
-    stage: 'vfx',
+    stage: 'edit',
     words: ['fire', 'flames', 'smoke', 'glitch', 'flash', 'flashes', 'shake', 'zoom', 'effect', 'effects', 'vfx', 'lightning', 'sparks', 'slow-mo', 'slowmo', 'slow', 'rgb', 'strobe', 'glow', 'vhs', 'clone', 'clones'],
   },
   {
@@ -17,11 +18,11 @@ const RULES: { stage: StageId; words: string[] }[] = [
     words: ['b-roll', 'broll', 'cutaway', 'cutaways', 'car', 'cars', 'lambo', 'benz', 'whip', 'money', 'cash', 'crowd', 'skyline', 'city', 'rain', 'jet', 'mansion', 'club', 'drone', 'train', 'block', 'shot of'],
   },
   {
-    stage: 'location',
+    stage: 'looks',
     words: ['beach', 'alley', 'rooftop', 'roof', 'location', 'background', 'desert', 'street', 'warehouse', 'void', 'white room', 'dark room', 'hanging mic', 'studio', 'stage'],
   },
   {
-    stage: 'record',
+    stage: 'shoot',
     words: ['angle', 'take', 'takes', 'close-up', 'closeup', 'wide shot', 'low angle'],
   },
 ];

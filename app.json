@@ -52,7 +52,10 @@
           "recordAudioAndroid": true
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-audio",
+      "expo-video",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": false,
