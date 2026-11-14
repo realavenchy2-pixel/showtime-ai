@@ -1,9 +1,11 @@
 import { Check, Clapperboard } from '@/components/icons';
 import { StyleSheet, View } from 'react-native';
 
-import { formatTime } from '@/engine/director';
+import { estimateBudget } from '@/engine/agent';
+import { formatTime, lookSummary } from '@/engine/director';
+import { fxPack } from '@/engine/fx';
 import type { AttachmentKind, Message, Project } from '@/engine/types';
-import { previewFor } from '@/lib/preview';
+import { coverFor } from '@/lib/preview';
 import { color, radius, space } from '@/theme/tokens';
 
 import { Frame } from '../Frame';
@@ -58,20 +60,26 @@ function Attachment({ kind, project }: { kind: AttachmentKind; project: Project 
       return <TakePlan project={project} />;
     case 'cutSummary':
       return <CutSummary project={project} />;
+    case 'plan':
+      return <PlanCard project={project} />;
     case 'shotsSummary':
       return <ShotsSummary project={project} />;
     case 'wrap': {
-      const preview = previewFor(project);
-      return <Frame kind={preview.kind} label="Final, exported" behindText={preview.behindText} relit style={styles.wrapFrame} />;
+      const cover = coverFor(project);
+      return <Frame kind={cover.kind} thumb={cover.thumb} label="Final, exported" relit style={styles.wrapFrame} />;
     }
     default:
       return null;
   }
 }
 
+/** Shots that cut well together. Checked off as takes come in. */
 function TakePlan({ project }: { project: Project }) {
   return (
     <View style={styles.card}>
+      <T v="micro" c="ash">
+        Shots that cut well together
+      </T>
       {project.takePlan.map((t, i) => {
         const done = project.takes.length > i;
         return (
@@ -98,16 +106,17 @@ function TakePlan({ project }: { project: Project }) {
 function CutSummary({ project }: { project: Project }) {
   const song = project.song;
   if (!song) return null;
+  const shots = project.cut.segments.filter((g) => g.takeId).length;
   return (
     <View style={styles.card}>
       <View style={styles.strip}>
         {song.sections.map((s) => {
-          const shots = project.cut.segments.filter((g) => g.sectionId === s.id).length;
+          const n = project.cut.segments.filter((g) => g.sectionId === s.id).length;
           return (
             <View key={s.id} style={[styles.stripPart, { flex: s.end - s.start }]}>
               <View style={[styles.stripBar, s.kind === 'hook' && styles.stripHook]}>
-                {Array.from({ length: Math.max(0, shots - 1) }, (_, i) => (
-                  <View key={i} style={[styles.cutMark, { left: `${((i + 1) / shots) * 100}%` }]} />
+                {Array.from({ length: Math.max(0, n - 1) }, (_, i) => (
+                  <View key={i} style={[styles.cutMark, { left: `${((i + 1) / n) * 100}%` }]} />
                 ))}
               </View>
               {(s.end - s.start) / song.durationSec > 0.08 ? (
@@ -120,14 +129,47 @@ function CutSummary({ project }: { project: Project }) {
         })}
       </View>
       <T v="caption" c="smoke">
-        {`${project.cut.segments.length} shots across ${formatTime(song.durationSec)}. Hooks are the brighter bars.`}
+        {`${shots} shots across ${formatTime(song.durationSec)}. Hooks are the brighter bars.`}
       </T>
     </View>
   );
 }
 
+/** The director's pitch: where it happens, the cutaways, the effects, and what it takes to render. */
+function PlanCard({ project }: { project: Project }) {
+  const budget = estimateBudget(project);
+  const cutaways = project.broll.ideas.filter((i) => i.keep);
+  const pack = fxPack(project.fx.pack);
+  const rows: { label: string; value: string }[] = [
+    { label: 'Looks', value: lookSummary(project) || 'Pick a look for every section' },
+    {
+      label: 'B-roll',
+      value: cutaways.length ? `${cutaways.length} ${cutaways.length === 1 ? 'cutaway' : 'cutaways'}: ${cutaways.map((i) => i.shot.split(',')[0].toLowerCase()).join('; ')}` : 'None',
+    },
+    { label: 'Effects', value: pack ? `${pack.title} pack at ${project.fx.intensity}` : 'Picked in the edit' },
+    {
+      label: 'Switch',
+      value: `${project.cut.segments.filter((s) => s.takeId).length} shots, ${budget.switchFrames.toLocaleString('en-US')} frames at ${project.switchSettings.resolution}p`,
+    },
+  ];
+  return (
+    <View style={styles.card}>
+      {rows.map((row) => (
+        <View key={row.label} style={styles.planLine}>
+          <T v="micro" c="ash" style={styles.planLabel}>
+            {row.label}
+          </T>
+          <T v="callout" c="chalk" style={styles.flex}>
+            {row.value}
+          </T>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function ShotsSummary({ project }: { project: Project }) {
-  const flagged = project.shots.filter((s) => s.flag);
+  const flagged = project.shots.filter((s) => s.flag || s.status === 'failed');
   return (
     <View style={styles.card}>
       <View style={styles.grid}>
@@ -135,13 +177,13 @@ function ShotsSummary({ project }: { project: Project }) {
           <View
             key={s.id}
             accessibilityLabel={`Shot ${s.n}${s.flag ? ', needs a look' : ''}`}
-            style={[styles.cell, s.flag ? styles.cellFlag : s.status === 'approved' ? styles.cellApproved : styles.cellReady]}
+            style={[styles.cell, s.flag || s.status === 'failed' ? styles.cellFlag : s.status === 'approved' ? styles.cellApproved : styles.cellReady]}
           />
         ))}
       </View>
       {flagged.map((s) => (
         <T key={s.id} v="caption" c="smoke">
-          {`Shot ${s.n}: ${s.flag}`}
+          {`Shot ${s.n}: ${s.flag ?? s.error ?? "didn't render"}`}
         </T>
       ))}
     </View>
@@ -208,6 +250,14 @@ const styles = StyleSheet.create({
   },
   planNum: {
     width: 22,
+  },
+  planLine: {
+    flexDirection: 'row',
+    gap: space.m,
+    alignItems: 'baseline',
+  },
+  planLabel: {
+    width: 56,
   },
   flex: {
     flex: 1,

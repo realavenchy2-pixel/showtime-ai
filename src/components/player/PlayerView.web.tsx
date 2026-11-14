@@ -1,0 +1,185 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
+
+import { Pause, Play } from '@/components/icons';
+import { formatTime } from '@/engine/director';
+import { songPeaks, songUrl } from '@/media/audio.web';
+import { buildComposition } from '@/media/composition';
+import { Player, type PlayerState } from '@/media/player.web';
+import { color, radius, space } from '@/theme/tokens';
+
+import { Press } from '../Press';
+import { StageGlyph } from '../StageGlyph';
+import { T } from '../T';
+import { Timeline } from './Timeline';
+import type { PlayerProps } from './types';
+
+/** The video, playing for real: footage cut to the song with every effect drawn live. */
+export function PlayerView({ project, effects, soloTakeId, format, label, cue, maxHeight, style }: PlayerProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const playerRef = useRef<Player | null>(null);
+  const [state, setState] = useState<PlayerState>({ time: 0, duration: 0, playing: false, ready: false });
+  const [peaks, setPeaks] = useState<number[] | undefined>(project.song?.peaks);
+  const [failed, setFailed] = useState(false);
+
+  // Shot progress changes five times a second while the switch runs; only what's back matters here.
+  const shotsKey = project.shots.map((s) => `${s.status[0]}${s.renderUrl ? 1 : 0}`).join('');
+  const composition = useMemo(
+    () => buildComposition(project, { effects, soloTakeId, format }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [project.song, project.takes, project.clips, project.cut.segments, shotsKey, project.looks, project.broll.ideas, project.fx, project.final.builds, project.formats, effects, soloTakeId, format],
+  );
+  const song = project.song;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    try {
+      const player = new Player(canvas);
+      playerRef.current = player;
+      const off = player.subscribe(setState);
+      return () => {
+        off();
+        player.dispose();
+        playerRef.current = null;
+      };
+    } catch {
+      // No WebGL here (very old browsers, some locked-down webviews).
+      void Promise.resolve().then(() => setFailed(true));
+    }
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    if (!composition || !song) return;
+    void songUrl(song).then((url) => {
+      if (live) void playerRef.current?.load(composition, url);
+    });
+    return () => {
+      live = false;
+    };
+  }, [composition, song]);
+
+  useEffect(() => {
+    let live = true;
+    if (!song) return;
+    void songPeaks(song)
+      .then((p) => live && setPeaks(p))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [song]);
+
+  const cueKey = cue?.key;
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!cue || !player) return;
+    player.seek(cue.time);
+    if (cue.play) player.play(cue.until);
+    // Only a new key is a new request; the cue object itself changes every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cueKey]);
+
+  const aspect = composition?.aspect ?? 16 / 9;
+  const empty = !composition || composition.segments.length === 0;
+
+  return (
+    <View style={[styles.wrap, style]}>
+      <View style={[styles.stage, { aspectRatio: aspect }, maxHeight ? { maxHeight, alignSelf: 'center' } : null]}>
+        <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block', background: '#000' }} />
+        <Press
+          onPress={() => playerRef.current?.toggle()}
+          scaleTo={1}
+          disabled={empty}
+          accessibilityLabel={state.playing ? 'Pause' : 'Play'}
+          style={StyleSheet.absoluteFill}>
+          {empty ? (
+            <View style={styles.center}>
+              <T v="callout" c="smoke">
+                {failed ? 'This browser can’t draw the preview.' : 'No footage yet'}
+              </T>
+            </View>
+          ) : !state.playing ? (
+            <View style={styles.center}>
+              <View style={styles.playBtn}>{state.ready ? <Play size={26} color={color.stage} fill={color.stage} /> : <StageGlyph status="working" size={24} />}</View>
+            </View>
+          ) : null}
+        </Press>
+        {label ? (
+          <View style={styles.label} pointerEvents="none">
+            <T v="micro" c="chalk" numberOfLines={1}>
+              {label}
+            </T>
+          </View>
+        ) : null}
+        {state.playing ? (
+          <View style={styles.pauseHint} pointerEvents="none">
+            <Pause size={14} color={color.chalk} fill={color.chalk} />
+          </View>
+        ) : null}
+        <View style={styles.time} pointerEvents="none">
+          <T v="micro" c="chalk">{`${formatTime(state.time)} / ${formatTime(state.duration || song?.durationSec || 0)}`}</T>
+        </View>
+      </View>
+      <Timeline project={project} time={state.time} peaks={peaks} onSeek={(t) => playerRef.current?.seek(t)} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrap: {
+    gap: space.s,
+  },
+  stage: {
+    width: '100%',
+    borderRadius: radius.m,
+    overflow: 'hidden',
+    backgroundColor: color.stage,
+    borderWidth: 1,
+    borderColor: color.hairline,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    paddingLeft: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: color.chalk,
+  },
+  label: {
+    position: 'absolute',
+    left: space.s,
+    top: space.s,
+    paddingHorizontal: space.s,
+    paddingVertical: 3,
+    borderRadius: radius.s,
+    backgroundColor: color.scrim,
+  },
+  pauseHint: {
+    position: 'absolute',
+    right: space.s,
+    top: space.s,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: color.scrim,
+  },
+  time: {
+    position: 'absolute',
+    right: space.s,
+    bottom: space.s,
+    paddingHorizontal: space.s,
+    paddingVertical: 3,
+    borderRadius: radius.s,
+    backgroundColor: color.scrim,
+  },
+});

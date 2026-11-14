@@ -247,7 +247,6 @@ export class Compositor {
     const gl = this.gl;
     if (!comp) return;
     const seg = segmentAt(comp.segments, t);
-    const beat = 60 / comp.bpm;
 
     // Effects active right now.
     const fx: Record<FxEffectId, number> = { punchIn: 0, shake: 0, flash: 0, rgbSplit: 0, glitch: 0, vhs: 0, stutter: 0, kineticLyrics: 0, textBehind: 0, glowOutline: 0 };

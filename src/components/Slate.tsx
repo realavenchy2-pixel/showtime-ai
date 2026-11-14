@@ -12,7 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Polygon, Rect } from 'react-native-svg';
 
-import { ACTS, trackerView } from '@/engine/stages';
+import { trackerView } from '@/engine/stages';
 import type { Project, StageId } from '@/engine/types';
 import { haptic } from '@/lib/haptics';
 import { statusLine } from '@/lib/status';
@@ -47,7 +47,7 @@ const curve = Easing.bezier(...easeOut);
 
 /**
  * The tracker: a film slate showing the scene (stage) you're on. When a stage wraps,
- * the clapper snaps shut. Tap it to see all 11 stages and go back to a finished one.
+ * the clapper snaps shut. Tap it to see every stage and go back to a finished one.
  */
 export function Slate({ project, expanded, onToggle, onRevisit }: Props) {
   const view = trackerView(project);
@@ -68,17 +68,17 @@ export function Slate({ project, expanded, onToggle, onRevisit }: Props) {
   const clapper = useAnimatedStyle(() => ({ transform: [{ rotate: `${tilt.get()}deg` }] }));
 
   const stage = view.current;
-  const scene = stage ? String(stage.n).padStart(2, '0') : '11';
+  const scene = stage ? String(stage.n).padStart(2, '0') : String(view.total).padStart(2, '0');
   const title = stage ? stage.title : "That's a wrap";
   const working = view.currentStatus === 'working';
 
   return (
     <View style={styles.slate}>
       <Animated.View style={[styles.clapper, clapper]}>
-        <Stripes height={14} />
+        <Stripes height={10} />
       </Animated.View>
       <View style={styles.bar}>
-        <Stripes height={14} />
+        <Stripes height={10} />
       </View>
 
       <Press
@@ -100,48 +100,41 @@ export function Slate({ project, expanded, onToggle, onRevisit }: Props) {
           </View>
           {expanded ? <ChevronUp size={22} color={color.smoke} /> : <ChevronDown size={22} color={color.smoke} />}
         </View>
-        <ProgressTicks view={view} labels />
+        <ProgressTicks view={view} />
       </Press>
 
       {expanded ? (
         <View style={styles.list}>
-          {ACTS.map((act) => (
-            <View key={act.id} style={styles.act}>
-              <T v="micro" c="ash">
-                {act.title}
-              </T>
-              {view.stages
-                .filter((s) => s.def.act === act.id)
-                .map((s) => {
-                  const canGoBack = s.status === 'done' || s.status === 'skipped';
-                  return (
-                    <Press
-                      key={s.def.id}
-                      disabled={!canGoBack}
-                      onPress={() => onRevisit(s.def.id)}
-                      scaleTo={0.99}
-                      accessibilityLabel={`${s.def.title}, ${s.status.replace('_', ' ')}${canGoBack ? '. Tap to go back' : ''}`}
-                      style={styles.row}>
-                      <StageGlyph status={s.status} />
-                      <T v="label" c={s.status === 'locked' || s.status === 'skipped' ? 'ash' : 'chalk'} style={styles.rowNum}>
-                        {String(s.def.n).padStart(2, '0')}
-                      </T>
-                      <View style={styles.rowText}>
-                        <T v="callout" c={s.status === 'locked' ? 'smoke' : 'chalk'} numberOfLines={1}>
-                          {s.def.title}
-                          {s.def.optional ? <T v="caption" c="ash">{'  optional'}</T> : null}
-                        </T>
-                      </View>
-                      {canGoBack ? (
-                        <T v="caption" c="ash">
-                          {s.status === 'skipped' ? 'Skipped' : 'Go back'}
-                        </T>
-                      ) : null}
-                    </Press>
-                  );
-                })}
-            </View>
-          ))}
+          {view.stages.map((s) => {
+            const canGoBack = s.status === 'done' || s.status === 'skipped';
+            return (
+              <Press
+                key={s.def.id}
+                disabled={!canGoBack}
+                onPress={() => onRevisit(s.def.id)}
+                scaleTo={0.99}
+                accessibilityLabel={`${s.def.title}, ${s.status.replace('_', ' ')}${canGoBack ? '. Tap to go back' : ''}`}
+                style={styles.row}>
+                <StageGlyph status={s.status} />
+                <T v="label" c={s.status === 'locked' || s.status === 'skipped' ? 'ash' : 'chalk'} style={styles.rowNum}>
+                  {String(s.def.n).padStart(2, '0')}
+                </T>
+                <View style={styles.rowText}>
+                  <T v="callout" c={s.status === 'locked' ? 'smoke' : 'chalk'} numberOfLines={1}>
+                    {s.def.title}
+                  </T>
+                  <T v="caption" c="ash" numberOfLines={1}>
+                    {s.def.summary}
+                  </T>
+                </View>
+                {canGoBack ? (
+                  <T v="caption" c="ash">
+                    {s.status === 'skipped' ? 'Skipped' : 'Go back'}
+                  </T>
+                ) : null}
+              </Press>
+            );
+          })}
         </View>
       ) : null}
     </View>
@@ -157,18 +150,18 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   clapper: {
-    height: 14,
+    height: 10,
     transformOrigin: 'left center',
   },
   bar: {
-    height: 14,
+    height: 10,
     marginTop: 2,
   },
   body: {
     paddingHorizontal: space.l,
-    paddingTop: space.m,
-    paddingBottom: space.l,
-    gap: space.m,
+    paddingTop: space.s,
+    paddingBottom: space.m,
+    gap: space.s,
   },
   head: {
     flexDirection: 'row',
@@ -186,14 +179,10 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: color.hairline,
     paddingHorizontal: space.l,
-    paddingVertical: space.m,
-    gap: space.m,
-  },
-  act: {
-    gap: 2,
+    paddingVertical: space.s,
   },
   row: {
-    minHeight: 44,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.m,

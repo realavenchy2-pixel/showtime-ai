@@ -78,7 +78,7 @@ function ProjectTile({ project }: { project: Project }) {
       style={styles.tile}
       scaleTo={0.98}
       accessibilityLabel={`${project.title}. ${statusLine(project)}`}>
-      <Frame kind={cover.kind} format="9:16" relit={cover.relit} behindText={cover.behindText}>
+      <Frame kind={cover.kind} thumb={cover.thumb} format="9:16" relit={cover.relit}>
         {project.isSample ? (
           <View style={styles.sample}>
             <T v="micro" c="chalk">

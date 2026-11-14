@@ -1,0 +1,492 @@
+import { LinearGradient } from 'expo-linear-gradient';
+import { type ReactNode, useEffect } from 'react';
+import { StyleSheet, View } from 'react-native';
+import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming, ZoomIn } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Path } from 'react-native-svg';
+
+import { RefreshCcw, X } from '@/components/icons';
+import { formatTime } from '@/engine/director';
+import { barSec } from '@/engine/samples';
+import type { LyricLine, PlannedTake, Section, Song, Take, TakeScope } from '@/engine/types';
+import { color, gutter, maxWidth, radius, space } from '@/theme/tokens';
+
+import { Frame } from '../Frame';
+import { Press } from '../Press';
+import { StageGlyph } from '../StageGlyph';
+import { T } from '../T';
+
+export type RecorderPhase = 'opening' | 'blocked' | 'idle' | 'countin' | 'recording' | 'saving';
+
+interface Props {
+  phase: RecorderPhase;
+  /** Count-in number on screen, 4 down to 1. */
+  beat: number;
+  song: Song;
+  /** Song time under the playhead. */
+  songTime: number;
+  /** The stretch of the song this take covers. */
+  from: number;
+  to: number;
+  takes: Take[];
+  planned?: PlannedTake;
+  scope: TakeScope;
+  hasHook: boolean;
+  peaks?: number[];
+  blocked?: { title: string; body: string };
+  onScope: (scope: TakeScope) => void;
+  onRecord: () => void;
+  onStop: () => void;
+  onFlip?: () => void;
+  onClose: () => void;
+  /** The live camera picture, filling the screen. */
+  children: ReactNode;
+}
+
+const RING = 2 * Math.PI * 42;
+
+function wavePath(peaks: number[], height: number): string {
+  const w = 1000 / peaks.length;
+  let d = '';
+  peaks.forEach((p, i) => {
+    const h = Math.max(1.5, p * height);
+    d += `M${(i * w).toFixed(2)} ${((height - h) / 2).toFixed(2)}h${(w * 0.62).toFixed(2)}v${h.toFixed(2)}h${(-w * 0.62).toFixed(2)}z`;
+  });
+  return d;
+}
+
+function sectionAt(sections: Section[], t: number): Section | undefined {
+  return sections.find((s) => t >= s.start && t < s.end) ?? sections[sections.length - 1];
+}
+
+/** The lyric line under the playhead and the one after it. */
+function currentLines(lines: LyricLine[], t: number): { current?: LyricLine; next?: LyricLine } {
+  let idx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].words[0].t <= t + 0.6) idx = i;
+  }
+  if (idx === -1) return { current: undefined, next: lines.find((l) => l.words[0].t > t) };
+  const current = lines[idx];
+  const lastWord = current.words[current.words.length - 1];
+  if (t > lastWord.t + 2.5) return { current: undefined, next: lines[idx + 1] };
+  return { current, next: lines[idx + 1] };
+}
+
+/** Everything on top of the camera: the take, the count-in, the prompter, the song and the record button. */
+export function RecorderChrome(props: Props) {
+  const { phase, beat, song, songTime, from, to, takes, planned, scope, hasHook, peaks, blocked, onScope, onRecord, onStop, onFlip, onClose, children } = props;
+  const insets = useSafeAreaInsets();
+  const n = takes.length;
+  const recording = phase === 'recording';
+  const idle = phase === 'idle';
+  const t = idle || phase === 'opening' || phase === 'blocked' ? from : songTime;
+  const section = sectionAt(song.sections, Math.max(0, t));
+  const bar = barSec(song.bpm);
+  const barInSection = section ? Math.floor(Math.max(0, t - section.start) / bar) + 1 : 1;
+  const barsInSection = section ? Math.max(1, Math.round((section.end - section.start) / bar)) : 1;
+  const lyric = currentLines(song.lyrics, t);
+  const progress = to > from ? Math.max(0, Math.min(1, (t - from) / (to - from))) : 0;
+  const pct = (x: number) => `${Math.max(0, Math.min(100, (x / song.durationSec) * 100))}%` as const;
+
+  // The record ring breathes on the beat while a take rolls.
+  const pulse = useSharedValue(1);
+  useEffect(() => {
+    if (recording) {
+      const beatMs = 60000 / song.bpm;
+      pulse.set(withRepeat(withSequence(withTiming(1.07, { duration: 70, easing: Easing.out(Easing.quad) }), withTiming(1, { duration: Math.max(80, beatMs - 70), easing: Easing.out(Easing.cubic) })), -1));
+    } else {
+      cancelAnimation(pulse);
+      pulse.set(withTiming(1, { duration: 120 }));
+    }
+  }, [recording, song.bpm, pulse]);
+  const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.get() }] }));
+
+  return (
+    <View style={styles.page}>
+      <View style={StyleSheet.absoluteFill}>{children}</View>
+
+      <LinearGradient colors={['rgba(0,0,0,0.72)', 'rgba(0,0,0,0)']} style={[styles.top, { paddingTop: insets.top + space.s }]} pointerEvents="box-none">
+        <View style={styles.topRow}>
+          <Press onPress={onClose} accessibilityLabel="Close recorder" style={styles.iconBtn} hitSlop={8} disabled={phase === 'countin' || recording || phase === 'saving'}>
+            <X size={24} color={color.chalk} />
+          </Press>
+          <View style={styles.topText}>
+            {recording ? (
+              <View style={styles.rec}>
+                <View style={styles.recDot} />
+                <T v="micro" style={styles.tabular}>{`REC ${formatTime(Math.max(0, songTime - from))}`}</T>
+              </View>
+            ) : (
+              <T v="micro" c="smoke">
+                {phase === 'saving' ? 'Saving' : planned ? `${planned.angle}, a shot that cuts well` : 'Any angle you like'}
+              </T>
+            )}
+            <T v="label" numberOfLines={1}>{`Take ${n + 1}`}</T>
+          </View>
+          {onFlip ? (
+            <Press onPress={onFlip} accessibilityLabel="Flip camera" style={styles.iconBtn} hitSlop={8} disabled={!idle}>
+              <RefreshCcw size={22} color={idle ? color.chalk : color.ash} />
+            </Press>
+          ) : (
+            <View style={styles.iconBtn} />
+          )}
+        </View>
+      </LinearGradient>
+
+      {phase === 'countin' ? (
+        <View style={styles.centerFill} pointerEvents="none">
+          <Animated.View key={beat} entering={ZoomIn.duration(140)}>
+            <T v="display" style={styles.count} accessibilityLiveRegion="assertive">
+              {String(beat)}
+            </T>
+          </Animated.View>
+        </View>
+      ) : null}
+
+      {phase === 'opening' || phase === 'saving' ? (
+        <View style={styles.centerFill} pointerEvents="none">
+          <View style={styles.pill}>
+            <StageGlyph status="working" size={18} />
+            <T v="callout">{phase === 'opening' ? 'Opening the camera' : 'Saving and lining it up with the song'}</T>
+          </View>
+        </View>
+      ) : null}
+
+      {phase === 'blocked' && blocked ? (
+        <View style={styles.centerFill}>
+          <View style={styles.blocked}>
+            <T v="label">{blocked.title}</T>
+            <T v="body" c="smoke">
+              {blocked.body}
+            </T>
+          </View>
+        </View>
+      ) : null}
+
+      <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.82)']} locations={[0, 0.42]} style={[styles.bottom, { paddingBottom: insets.bottom + space.l }]} pointerEvents="box-none">
+        <View style={styles.column}>
+          <View style={styles.prompter} accessibilityLabel="Prompter">
+            <T v="micro" c="smoke">
+              {section ? `${section.label}, bar ${Math.min(barInSection, barsInSection)} of ${barsInSection}` : ''}
+            </T>
+            {lyric.current ? (
+              <T v="heading" style={styles.lyric}>
+                {lyric.current.words.map((w, i) => (
+                  <T key={i} v="heading" style={[styles.lyric, { color: recording && w.t <= songTime ? color.chalk : color.smoke }]}>
+                    {`${w.text} `}
+                  </T>
+                ))}
+              </T>
+            ) : (
+              <T v="heading" c="smoke" style={styles.lyric}>
+                {song.lyrics.length ? 'Instrumental' : section?.kind === 'hook' ? 'Give the hook everything' : 'Perform it like the room is full'}
+              </T>
+            )}
+            {lyric.next ? (
+              <T v="callout" c="ash" numberOfLines={1}>
+                {lyric.next.words.map((w) => w.text).join(' ')}
+              </T>
+            ) : null}
+          </View>
+
+          <View style={styles.songRow}>
+            <View style={styles.strip}>
+              {song.sections.map((s) => (
+                <View key={s.id} style={[styles.stripSection, { left: pct(s.start), width: pct(s.end - s.start) }, s.kind === 'hook' && styles.stripHook]} />
+              ))}
+              {peaks?.length ? (
+                <View style={StyleSheet.absoluteFill}>
+                  <Svg width="100%" height="100%" viewBox="0 0 1000 28" preserveAspectRatio="none">
+                    <Path d={wavePath(peaks, 28)} fill={color.chalk} opacity={0.5} />
+                  </Svg>
+                </View>
+              ) : null}
+              <View style={[styles.stripRange, { left: pct(from), width: pct(to - from) }]} />
+              <View style={[styles.stripPlayed, { left: pct(from), width: pct(Math.max(0, t - from)) }]} />
+              <View style={[styles.stripHead, { left: pct(t) }]} />
+            </View>
+            <T v="micro" c="smoke" style={styles.tabular}>{`${formatTime(t)} / ${formatTime(to)}`}</T>
+          </View>
+
+          {idle && hasHook ? (
+            <View style={styles.scopes} accessibilityRole="radiogroup">
+              {(['Full song', 'Hook only'] as TakeScope[]).map((s) => {
+                const on = scope === s;
+                return (
+                  <Press key={s} onPress={() => onScope(s)} style={[styles.scope, on && styles.scopeOn]} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={s}>
+                    <T v="caption" style={{ color: on ? color.stage : color.chalk }}>
+                      {s}
+                    </T>
+                  </Press>
+                );
+              })}
+            </View>
+          ) : null}
+
+          <View style={styles.controls}>
+            <View style={styles.side}>
+              {n > 0 ? (
+                <View style={styles.reel} accessibilityLabel={`${n} ${n === 1 ? 'take' : 'takes'} in`}>
+                  {takes.slice(-3).map((take) => (
+                    <View key={take.id} style={styles.reelThumb}>
+                      <Frame kind="room" thumb={take.thumb} relit={false} rounded={false} />
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <T v="caption" c="smoke" style={styles.center}>
+                  {phase === 'countin' ? 'Get ready' : recording ? 'Tap to stop' : 'Tap to record'}
+                </T>
+              )}
+            </View>
+            <Animated.View style={pulseStyle}>
+              <Press
+                onPress={idle ? onRecord : recording ? onStop : undefined}
+                disabled={!idle && !recording}
+                accessibilityLabel={recording ? 'Stop recording' : 'Start recording'}
+                style={styles.recordBtn}>
+                <Svg width={92} height={92} style={StyleSheet.absoluteFill}>
+                  <Circle cx={46} cy={46} r={42} stroke="rgba(242,240,236,0.35)" strokeWidth={4} fill="none" />
+                  {recording ? (
+                    <Circle cx={46} cy={46} r={42} stroke={color.chalk} strokeWidth={4} fill="none" strokeDasharray={`${RING * progress} ${RING}`} strokeLinecap="round" transform="rotate(-90 46 46)" />
+                  ) : (
+                    <Circle cx={46} cy={46} r={42} stroke={idle ? color.chalk : color.ash} strokeWidth={4} fill="none" />
+                  )}
+                </Svg>
+                <View style={[styles.recordInner, recording && styles.recordStop, !idle && !recording && styles.recordOff]} />
+              </Press>
+            </Animated.View>
+            <View style={styles.side}>
+              {idle && n > 0 ? (
+                <Press onPress={onClose} style={styles.done} accessibilityLabel="Done recording">
+                  <T v="callout">Done</T>
+                </Press>
+              ) : n > 0 ? (
+                <T v="caption" c="smoke" style={styles.center}>
+                  {phase === 'countin' ? 'Get ready' : recording ? 'Tap to stop' : ''}
+                </T>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  page: {
+    flex: 1,
+    backgroundColor: color.stage,
+  },
+  top: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: space.s,
+    paddingBottom: space.xxl,
+    alignItems: 'center',
+  },
+  topRow: {
+    width: '100%',
+    maxWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  topText: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  iconBtn: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rec: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  recDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: color.rec,
+  },
+  tabular: {
+    fontVariant: ['tabular-nums'],
+  },
+  centerFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: gutter,
+  },
+  count: {
+    fontSize: 200,
+    lineHeight: 200,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowRadius: 24,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.s,
+    paddingHorizontal: space.l,
+    paddingVertical: space.m,
+    borderRadius: radius.pill,
+    backgroundColor: color.scrim,
+  },
+  blocked: {
+    maxWidth: 420,
+    gap: space.s,
+    padding: space.xl,
+    borderRadius: radius.l,
+    backgroundColor: color.curtain,
+    borderWidth: 1,
+    borderColor: color.hairline,
+  },
+  bottom: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: gutter,
+    paddingTop: 72,
+    alignItems: 'center',
+  },
+  column: {
+    width: '100%',
+    maxWidth,
+    gap: space.m,
+  },
+  prompter: {
+    gap: 2,
+    minHeight: 76,
+    justifyContent: 'flex-end',
+  },
+  lyric: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
+  },
+  songRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.m,
+  },
+  strip: {
+    flex: 1,
+    height: 30,
+    borderRadius: 6,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(242,240,236,0.08)',
+  },
+  stripSection: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(0,0,0,0.6)',
+  },
+  stripHook: {
+    backgroundColor: 'rgba(242,240,236,0.14)',
+  },
+  stripRange: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    borderWidth: 1,
+    borderColor: 'rgba(242,240,236,0.55)',
+    borderRadius: 5,
+  },
+  stripPlayed: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,69,58,0.35)',
+  },
+  stripHead: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 2,
+    marginLeft: -1,
+    backgroundColor: color.chalk,
+  },
+  scopes: {
+    flexDirection: 'row',
+    gap: space.s,
+    alignSelf: 'center',
+  },
+  scope: {
+    minHeight: 36,
+    paddingHorizontal: space.l,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(242,240,236,0.4)',
+    justifyContent: 'center',
+  },
+  scopeOn: {
+    backgroundColor: color.chalk,
+    borderColor: color.chalk,
+  },
+  controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  side: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  center: {
+    textAlign: 'center',
+  },
+  reel: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  reelThumb: {
+    width: 40,
+    borderRadius: 4,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(242,240,236,0.4)',
+  },
+  done: {
+    minHeight: 44,
+    paddingHorizontal: space.l,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.chalk,
+    justifyContent: 'center',
+  },
+  recordBtn: {
+    width: 92,
+    height: 92,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordInner: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: color.rec,
+  },
+  recordStop: {
+    width: 32,
+    height: 32,
+    borderRadius: 7,
+  },
+  recordOff: {
+    backgroundColor: color.rig,
+  },
+});

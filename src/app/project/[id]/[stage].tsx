@@ -2,10 +2,14 @@ import { useLocalSearchParams } from 'expo-router';
 import { View } from 'react-native';
 
 import { Header } from '@/components/Screen';
-import { ExportStage, FinalStage, ResizeStage } from '@/components/stage/ShipStages';
-import { RoughCutStage, SongStage } from '@/components/stage/ShootStages';
-import { GenjutsuStage, LocationStage, SwitchStage } from '@/components/stage/SetStages';
-import { BrollStage, VfxStage } from '@/components/stage/StyleStages';
+import { BrollStage } from '@/components/stage/BrollStage';
+import { CutStage } from '@/components/stage/CutStage';
+import { EditStage } from '@/components/stage/EditStage';
+import { ExportStage } from '@/components/stage/ExportStage';
+import { LooksStage } from '@/components/stage/LooksStage';
+import { ShootStage } from '@/components/stage/ShootStage';
+import { SongStage } from '@/components/stage/SongStage';
+import { SwitchStage } from '@/components/stage/SwitchStage';
 import { useProject } from '@/engine/store';
 import type { StageId } from '@/engine/types';
 import { color } from '@/theme/tokens';
@@ -23,22 +27,18 @@ export default function StageRoute() {
   switch (stage) {
     case 'song':
       return <SongStage project={project} />;
-    case 'roughcut':
-      return <RoughCutStage project={project} />;
-    case 'location':
-      return <LocationStage project={project} />;
+    case 'shoot':
+      return <ShootStage project={project} />;
+    case 'cut':
+      return <CutStage project={project} />;
+    case 'looks':
+      return <LooksStage project={project} />;
     case 'switch':
       return <SwitchStage project={project} />;
-    case 'genjutsu':
-      return <GenjutsuStage project={project} />;
     case 'broll':
       return <BrollStage project={project} />;
-    case 'vfx':
-      return <VfxStage project={project} />;
-    case 'final':
-      return <FinalStage project={project} />;
-    case 'resize':
-      return <ResizeStage project={project} />;
+    case 'edit':
+      return <EditStage project={project} />;
     case 'export':
       return <ExportStage project={project} />;
     default:

@@ -6,7 +6,7 @@ import { Press } from '@/components/Press';
 import { Screen } from '@/components/Screen';
 import { T } from '@/components/T';
 import { formatTime } from '@/engine/director';
-import { ACTS, STAGES } from '@/engine/stages';
+import { STAGES } from '@/engine/stages';
 import { TUTORIAL_LENGTH } from '@/lib/tutorials';
 import { color, space } from '@/theme/tokens';
 
@@ -21,37 +21,27 @@ export default function TutorialsScreen() {
           One short video for every stage, in the order you’ll use them. The director opens the right one when you tap Watch how.
         </T>
       </View>
-      {ACTS.map((act) => (
-        <View key={act.id} style={styles.act}>
-          <T v="micro" c="ash">
-            {act.title}
-          </T>
-          {STAGES.filter((s) => s.act === act.id).map((s) => (
-            <Press
-              key={s.id}
-              onPress={() => router.push(`/tutorial/${s.id}`)}
-              scaleTo={0.99}
-              style={styles.row}
-              accessibilityLabel={`Tutorial ${s.n}, ${s.title}`}>
-              <T v="label" c="smoke" style={styles.num}>
-                {String(s.n).padStart(2, '0')}
+      <View style={styles.act}>
+        {STAGES.map((s) => (
+          <Press key={s.id} onPress={() => router.push(`/tutorial/${s.id}`)} scaleTo={0.99} style={styles.row} accessibilityLabel={`Tutorial ${s.n}, ${s.title}`}>
+            <T v="label" c="smoke" style={styles.num}>
+              {String(s.n).padStart(2, '0')}
+            </T>
+            <View style={styles.text}>
+              <T v="callout">{s.title}</T>
+              <T v="caption" c="smoke" numberOfLines={2}>
+                {s.summary}
               </T>
-              <View style={styles.text}>
-                <T v="callout">{s.title}</T>
-                <T v="caption" c="smoke" numberOfLines={2}>
-                  {s.summary}
-                </T>
-              </View>
-              <View style={styles.time}>
-                <PlayCircle size={22} color={color.chalk} strokeWidth={1.8} />
-                <T v="micro" c="ash">
-                  {formatTime(TUTORIAL_LENGTH[s.id])}
-                </T>
-              </View>
-            </Press>
-          ))}
-        </View>
-      ))}
+            </View>
+            <View style={styles.time}>
+              <PlayCircle size={22} color={color.chalk} strokeWidth={1.8} />
+              <T v="micro" c="ash">
+                {formatTime(TUTORIAL_LENGTH[s.id])}
+              </T>
+            </View>
+          </Press>
+        ))}
+      </View>
     </Screen>
   );
 }

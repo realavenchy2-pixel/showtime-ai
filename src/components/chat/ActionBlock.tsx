@@ -35,7 +35,7 @@ export function ActionBlock({ project, onAction, onWatchHow }: Props) {
           <View style={[styles.fill, { width: `${pct}%` }]} />
         </View>
         <T v="caption" c="ash">
-          In the app, a push alert tells you when this is done. Keep chatting meanwhile.
+          {project.autonomy === 'auto' ? "Keep talking to me while this runs. I'll stop when I need you." : 'Keep talking to me while this runs.'}
         </T>
       </View>
     );

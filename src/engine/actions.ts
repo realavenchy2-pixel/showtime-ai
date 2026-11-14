@@ -870,3 +870,8 @@ export function settle(p: Project, stepMs = 250, maxSteps = 10000): Project {
 }
 
 export { currentStage };
+
+/** Remembers the files an on-device export produced, so they can be saved again later. */
+export function setExportFiles(p: Project, files: NonNullable<Project['exportState']['files']>): Project {
+  return { ...p, exportState: { ...p.exportState, files } };
+}

@@ -52,6 +52,7 @@ export async function importSong(file: File): Promise<ImportedSong & { analysis:
     downbeatSec: analysis.downbeatSec,
     confidence: analysis.confidence,
     peaks: analysis.peaks,
+    sections: analysis.sections,
     analysis,
   };
 }

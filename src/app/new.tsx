@@ -18,11 +18,11 @@ export default function NewVideoScreen() {
       footer={
         <>
           <Button
-            label="Map my track"
+            label="Start this video"
             disabled={!ready}
             onPress={() => {
               if (!songChoiceReady(choice)) return;
-              const id = createProject(choice);
+              const id = createProject({ song: choice.song, vibe: choice.vibe, formats: choice.formats });
               router.replace(`/project/${id}`);
             }}
           />

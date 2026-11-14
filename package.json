@@ -45,6 +45,7 @@
     "zustand": "^5.0.16"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "@types/react": "~19.3.0",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~58.0.4",
@@ -60,7 +61,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
-    "export:web": "expo export -p web"
+    "export:web": "expo export -p web && node scripts/postbuild-web.mjs dist",
+    "build:pages": "SHOWTIME_BASE_URL=/showtime-ai expo export -p web && node scripts/postbuild-web.mjs dist /showtime-ai"
   },
   "private": true
 }

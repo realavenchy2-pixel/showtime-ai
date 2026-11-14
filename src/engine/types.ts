@@ -289,7 +289,14 @@ export interface Project {
   fx: FxPlan;
   /** `builds` counts how many times the director has assembled the edit. */
   final: { builds: number; locked: boolean };
-  exportState: { formats: Format[]; resolution: Resolution; done: boolean; creditsCharged: number };
+  exportState: {
+    formats: Format[];
+    resolution: Resolution;
+    done: boolean;
+    creditsCharged: number;
+    /** Finished files rendered on this device. */
+    files?: { format: Format; mediaId: string; extension: string }[];
+  };
   skipped: StageId[];
   job?: Job;
   ideas: Idea[];

@@ -1,5 +1,7 @@
 // Shapes shared by the web and native media code.
 
+import type { Section } from '@/engine/types';
+
 export type MediaKind = 'song' | 'take' | 'clip' | 'ref' | 'export';
 
 /** What the recorder hands back when a take stops. */
@@ -40,6 +42,9 @@ export interface ImportedSong {
   durationSec: number;
   bpm: number;
   downbeatSec: number;
+  /** 0 to 1. Low, or zero on the phone build, means the artist should tap the tempo in. */
   confidence: number;
   peaks: number[];
+  /** A first guess at the song's layout, when the audio could be read. */
+  sections?: Section[];
 }

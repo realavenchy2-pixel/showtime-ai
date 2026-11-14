@@ -1,3 +1,4 @@
+import { createAudioPlayer } from 'expo-audio';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -9,6 +10,20 @@ import type { ImportedSong, ImportedVideo } from './types';
 // File pickers for the phone build. Beat mapping and sync-by-ear need decoded audio, which runs
 // in the web app (and later on the studio server), so here songs come back unmapped and videos unsynced.
 
+/** Loads the file just far enough to learn how long it is. */
+async function audioDuration(uri: string): Promise<number> {
+  const player = createAudioPlayer({ uri });
+  try {
+    for (let i = 0; i < 50; i++) {
+      if (player.isLoaded && player.duration > 0) return player.duration;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return 0;
+  } finally {
+    player.release();
+  }
+}
+
 export async function pickSong(): Promise<ImportedSong | null> {
   const res = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
   if (res.canceled || !res.assets?.length) return null;
@@ -17,7 +32,7 @@ export async function pickSong(): Promise<ImportedSong | null> {
   return {
     audioId,
     title: asset.name.replace(/\.[a-z0-9]+$/i, '') || 'Untitled',
-    durationSec: 0,
+    durationSec: await audioDuration(audioId),
     bpm: 0,
     downbeatSec: 0,
     confidence: 0,
