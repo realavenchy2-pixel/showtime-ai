@@ -34,7 +34,10 @@ const head = `
     <link rel="apple-touch-icon" href="${base}/icons/icon-180.png" />
     <style>
       html, body { background: #000; color-scheme: dark; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
-      #boot { position: fixed; inset: 0; display: grid; place-items: center; font: 800 34px/1 "Arial Narrow", system-ui, sans-serif; letter-spacing: 0.5px; color: #F2F0EC; }
+      #boot { position: fixed; inset: 0; display: grid; place-items: center; }
+      #boot img { width: min(64vw, 280px); height: auto; animation: boot 1.1s ease-in-out infinite alternate; }
+      @keyframes boot { from { opacity: 0.55; } to { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { #boot img { animation: none; } }
       #root:not(:empty) + #boot { display: none; }
     </style>`;
 
@@ -42,7 +45,7 @@ const file = join(dist, 'index.html');
 let html = readFileSync(file, 'utf8');
 html = html.replace('content="width=device-width, initial-scale=1, shrink-to-fit=no"', 'content="width=device-width, initial-scale=1, viewport-fit=cover"');
 html = html.replace('</head>', `${head}\n  </head>`);
-html = html.replace(/(<div id="root"><\/div>)/, '$1\n    <div id="boot" role="status">Showtime</div>');
+html = html.replace(/(<div id="root"><\/div>)/, `$1\n    <div id="boot" role="status"><img src="${base}/icons/logo.png" alt="Showtime AI is loading" width="1100" height="330" /></div>`);
 writeFileSync(file, html);
 
 // A static host answers unknown paths with 404.html; serving the app there lets deep links and reloads work.
