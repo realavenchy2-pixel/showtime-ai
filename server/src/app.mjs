@@ -187,7 +187,7 @@ export function createApp(env, deps = {}) {
           project: input.project ?? {},
           history: Array.isArray(input.history) ? input.history : [],
           text: input.text,
-          task: input.task === 'edit' ? 'edit' : 'chat',
+          task: ['edit', 'plan'].includes(input.task) ? input.task : 'chat',
         });
         return json(request, answer);
       }

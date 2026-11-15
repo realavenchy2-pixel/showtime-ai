@@ -20,6 +20,7 @@ import {
   lockEdit,
   MIN_SHOT_SEC,
   redoShot,
+  removeTake,
   reshuffleCut,
   resumeSwitch,
   revisit,
@@ -42,9 +43,10 @@ import { nextActions } from '../director';
 import { buildCues, planForPack } from '../fx';
 import { routeIdea } from '../ideas';
 import { buildSampleProjects } from '../sampleProjects';
-import { barSec, DEFAULT_TAKE_PLAN, DEMO_TRACKS, demoDuration, songFromDemo } from '../samples';
+import { barSec, DEFAULT_TAKE_PLAN, DEMO_TRACKS, demoDuration, SCENE_SEC, scenesFor, songFromDemo, withScenes } from '../samples';
 import { currentStage, stageStatus, trackerView } from '../stages';
 import { HANDLE_SEC, SWITCHX } from '../switchx';
+import { lockPlan, planFromBrief, setVideoLength, SNIPPET_SEC, suggestedLength, videoLength } from '../brief';
 import { recentChat, summarize } from '../summary';
 import type { Project } from '../types';
 
@@ -194,6 +196,141 @@ describe('cut', () => {
     const running = runAgent(p);
     expect(running.job).toBeDefined();
     expect(reshuffleCut(running)).toBe(running);
+  });
+});
+
+describe('scenes and the brief', () => {
+  const scened = (start = 0) => {
+    const base = { ...songFromDemo(DEMO_TRACKS[0]), analyzed: true };
+    const range = start > 0 ? { start, end: base.durationSec } : undefined;
+    return settle(createProject({ song: withScenes(base, range), formats: ['16:9'], range }));
+  };
+
+  it('lays the video out in scenes by time, with no verse or hook', () => {
+    const song = { ...songFromDemo(DEMO_TRACKS[0]), analyzed: true };
+    const scenes = scenesFor(song).filter((s) => s.scene);
+    expect(scenes[0].start).toBe(0);
+    expect(scenes.at(-1)!.end).toBeCloseTo(song.durationSec, 2);
+    for (const s of scenes) expect(s.end - s.start).toBeGreaterThan(SCENE_SEC * 0.5);
+    for (const s of scenes) expect(s.end - s.start).toBeLessThan(SCENE_SEC * 1.6);
+    const fromHalf = scenesFor(song, { start: 40, end: song.durationSec });
+    expect(fromHalf[0]).toMatchObject({ id: 'before', start: 0, end: 40 });
+    expect(fromHalf[1].start).toBe(40);
+  });
+
+  it('starts from the artist\'s start point and picks a snippet length itself', () => {
+    let p = scened(40);
+    expect(videoRange(p).start).toBe(40);
+    expect(videoLength(p)).toBe('full');
+    p = setVideoLength(p, 'snippet');
+    const r = videoRange(p);
+    expect(r.start).toBe(40);
+    expect(Math.abs(r.end - r.start - SNIPPET_SEC)).toBeLessThan(barSec(p.song!.bpm));
+    expect(videoLength(p)).toBe('snippet');
+    // New scenes cover just the snippet, each with a look.
+    const inside = p.song!.sections.filter((s) => s.scene);
+    expect(inside[0].start).toBe(40);
+    expect(inside.at(-1)!.end).toBeCloseTo(r.end, 3);
+    for (const s of p.song!.sections) expect(p.looks[s.id]).toBeDefined();
+    expect(setVideoLength(p, 'full').range).toEqual({ start: 40, end: p.song!.durationSec });
+  });
+
+  it('turns a description into looks in the order described, cutaways and an effects pack', () => {
+    let p = scened();
+    const scenes = p.song!.sections.filter((s) => s.scene);
+    expect(scenes.length).toBeGreaterThanOrEqual(3);
+    p = planFromBrief(p, 'Rainy alley at night with neon. Then on the beach at sunset. A Lambo pulls up. Keep it dark and grimy');
+    expect(p.brief).toContain('Rainy alley');
+    expect(p.looks[scenes[0].id].location).toBe('alley');
+    expect(p.looks[scenes.at(-1)!.id].location).toBe('beach');
+    expect(p.looks[scenes[0].id].prompt).toContain('Rainy alley at night with neon');
+    expect(p.broll.ideas.some((i) => /lambo/i.test(i.shot))).toBe(true);
+    expect(p.fx.pack).toBe('dark');
+    expect(p.messages.at(-1)?.text).toMatch(/^Got it\. \d+ scenes, moving from alley to beach/);
+    expect(approvePlan(p).planApproved).toBe(true);
+  });
+
+  it('builds a custom world when the description names no preset place', () => {
+    let p = scened();
+    p = planFromBrief(p, 'On a rooftop over the city at sunrise');
+    for (const s of p.song!.sections.filter((x) => x.scene)) {
+      expect(p.looks[s.id].location).toBe('custom');
+      expect(p.looks[s.id].prompt).toContain('On a rooftop over the city at sunrise');
+    }
+    const vague = planFromBrief(scened(), 'make it look expensive');
+    const first = vague.song!.sections.find((s) => s.scene)!;
+    expect(vague.looks[first.id]).toMatchObject({ location: 'custom' });
+    expect(vague.looks[first.id].prompt).toContain('Make it look expensive');
+  });
+
+  it('locks the plan in one step: length, description, then locked before any take', () => {
+    const p = lockPlan(scened(), { brief: 'Rainy alley at night. Then the beach. Lambo pulls up', length: 'snippet' });
+    expect(p.planApproved).toBe(true);
+    expect(p.length).toBe('snippet');
+    expect(videoRange(p).start).toBe(0);
+    expect(p.messages.some((m) => m.from === 'user' && m.text.startsWith('Rainy alley'))).toBe(true);
+    expect(p.messages.some((m) => /^Got it\./.test(m.text))).toBe(true);
+    expect(currentStage(p)?.id).toBe('shoot');
+    // Nothing described: the director's own pitch stands and the plan still locks.
+    const quiet = lockPlan(scened(), { brief: '  ', length: 'full' });
+    expect(quiet.planApproved).toBe(true);
+    expect(quiet.brief).toBeUndefined();
+  });
+
+  it('places the video where the first take starts, keeping the plan in order', () => {
+    let p = lockPlan(scened(), { brief: 'Rainy alley at night. Then the beach. Lambo pulls up', length: 'snippet' });
+    const planned = p.song!.sections.filter((s) => s.scene).map((s) => p.looks[s.id].location);
+    p = addTake(p, { source: 'record', fromSec: 42, durationSec: 40 });
+    const r = videoRange(p);
+    expect(r.start).toBe(42);
+    expect(Math.abs(r.end - r.start - SNIPPET_SEC)).toBeLessThan(barSec(p.song!.bpm));
+    expect(p.song!.sections[0]).toMatchObject({ id: 'before', end: 42 });
+    const scenes = p.song!.sections.filter((s) => s.scene);
+    expect(scenes[0].start).toBe(42);
+    expect(scenes.map((s) => p.looks[s.id].location)).toEqual(planned);
+    for (const s of p.song!.sections) expect(p.looks[s.id]).toBeDefined();
+    for (const idea of p.broll.ideas) if (idea.at !== undefined) expect(idea.at).toBeGreaterThanOrEqual(42);
+    expect(p.messages.some((m) => m.text.startsWith('The video starts at 0:42 and runs'))).toBe(true);
+    expect(p.planApproved).toBe(true);
+    // Later takes land inside the video and don't move it.
+    const again = addTake(p, { source: 'record', fromSec: 80, durationSec: 10 });
+    expect(videoRange(again)).toEqual(r);
+    // Clearing every take lets the artist start somewhere else.
+    const cleared = removeTake(p, p.takes[0].id);
+    expect(videoRange(addTake(cleared, { source: 'record', fromSec: 10, durationSec: 30 })).start).toBe(10);
+  });
+
+  it('runs a full video from the first take to the end of the song', () => {
+    const top = addTake(lockPlan(scened(), { brief: '', length: 'full' }), { source: 'record', fromSec: 0, durationSec: 30 });
+    expect(top.range).toBeUndefined();
+    expect(top.messages.some((m) => m.text.startsWith('The video'))).toBe(false);
+    const late = addTake(lockPlan(scened(), { brief: '', length: 'full' }), { source: 'upload', fromSec: 60, durationSec: 30 });
+    expect(late.range).toEqual({ start: 60, end: late.song!.durationSec });
+    expect(late.messages.some((m) => m.text === 'The video starts at 1:00 and runs to the end of the song.')).toBe(true);
+  });
+
+  it('suggests a snippet for vertical-only videos and the full song otherwise', () => {
+    expect(suggestedLength(scened())).toBe('full');
+    const vertical = settle(createProject({ song: withScenes({ ...mud(), analyzed: true }), formats: ['9:16'] }));
+    expect(suggestedLength(vertical)).toBe('snippet');
+  });
+
+  it('lets Claude plan a scene in its own words', () => {
+    const p = scened();
+    const res = applyCommand(p, { type: 'setLook', section: 'Scene 2', location: 'custom', prompt: 'A rooftop at dawn, wind in the flags.' });
+    expect(res.ok).toBe(true);
+    expect(res.project.looks['scene-2']).toMatchObject({ location: 'custom', prompt: 'A rooftop at dawn, wind in the flags.' });
+    const preset = applyCommand(p, { type: 'setLook', section: 'Scene 1', location: 'beach', prompt: 'Beach at noon, harsh sun.' }).project;
+    expect(preset.looks['scene-1']).toMatchObject({ location: 'beach', prompt: 'Beach at noon, harsh sun.' });
+    expect(summarize(p)).toMatchObject({ video: { length: 'full', from: 0 } });
+  });
+
+  it('gives scenes rotating looks and still lands effects in Clean', () => {
+    const p = scened();
+    const ids = p.song!.sections.filter((s) => s.scene).map((s) => p.looks[s.id].location);
+    expect(new Set(ids).size).toBeGreaterThan(1);
+    const cues = buildCues(p.song!, planForPack('drill', 'Clean'));
+    expect(cues.filter((c) => c.fx === 'shake').length).toBeGreaterThan(10);
   });
 });
 

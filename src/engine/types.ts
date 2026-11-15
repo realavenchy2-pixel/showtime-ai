@@ -12,6 +12,9 @@ export type Vibe = 'Drill' | 'Trap' | 'Melodic' | 'Boom bap' | 'Dark';
 
 export type Format = '16:9' | '9:16' | '1:1';
 
+/** A snippet (about 30 seconds) or the full song from wherever the artist starts. */
+export type VideoLength = 'snippet' | 'full';
+
 export type SectionKind = 'intro' | 'verse' | 'hook' | 'bridge' | 'outro';
 
 export interface Section {
@@ -21,6 +24,11 @@ export interface Section {
   /** Song time in seconds. */
   start: number;
   end: number;
+  /**
+   * A stretch of the video the director laid out by time, not a part the artist named.
+   * Each scene gets its own look. Songs set up in the app use scenes; verse and hook still work underneath.
+   */
+  scene?: boolean;
 }
 
 export interface LyricWord {
@@ -290,6 +298,10 @@ export interface Project {
   formats: Format[];
   /** The part of the song the video covers. Unset means the full song. */
   range?: { start: number; end: number };
+  /** What the artist said they want to shoot, in their words. */
+  brief?: string;
+  /** Picked with the plan. The first take sets where the video starts. */
+  length?: VideoLength;
   takePlan: PlannedTake[];
   takes: Take[];
   clips: Clip[];

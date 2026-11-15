@@ -8,6 +8,7 @@ import { goBack } from '@/components/Screen';
 import { T } from '@/components/T';
 import { showToast } from '@/components/Toast';
 import { useApp, useProject } from '@/engine/store';
+import type { Song } from '@/engine/types';
 import { addRecorded } from '@/lib/footage';
 import { haptic } from '@/lib/haptics';
 import { useTakeRange } from '@/lib/takeRange';
@@ -48,7 +49,7 @@ export default function RecordScreen() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   /** Bumped to cancel a count-in or a take that is still starting. */
   const runRef = useRef(0);
-  const takeRef = useRef<{ startedPerf: number; samples: number[]; from: number; hookOnly: boolean } | null>(null);
+  const takeRef = useRef<{ startedPerf: number; samples: number[]; from: number } | null>(null);
   const [phase, setPhase] = useState<RecorderPhase>(() => (cameraSupported() ? 'opening' : 'blocked'));
   const [blocked, setBlocked] = useState<{ title: string; body: string } | undefined>(() => (cameraSupported() ? undefined : NO_CAMERA));
   const [beat, setBeat] = useState(4);
@@ -59,7 +60,8 @@ export default function RecordScreen() {
 
   const song = project?.song;
   const take = useTakeRange(project);
-  const { from, to, hookOnly } = take;
+  const { from, to } = take;
+  const listenUntil = take.bounds.end;
   const n = project?.takes.length ?? 0;
 
   // Camera: open once, close on the way out.
@@ -94,17 +96,21 @@ export default function RecordScreen() {
     };
   }, []);
 
-  // The song, loaded and ready before the first take.
+  // The song, loaded and ready before the first take. Keyed on the audio, so placing the video doesn't reload it.
+  const audioId = song?.audioId;
+  const source = song?.source;
+  const savedPeaks = song?.peaks;
   useEffect(() => {
-    if (!song) return;
+    if (!audioId || !source) return;
+    const track = { audioId, source, peaks: savedPeaks } as Song;
     let live = true;
     const audio = new Audio();
     audio.preload = 'auto';
     audioRef.current = audio;
-    void songUrl(song).then((url) => {
+    void songUrl(track).then((url) => {
       if (live && url) audio.src = url;
     });
-    void songPeaks(song)
+    void songPeaks(track)
       .then((p) => live && setPeaks(p))
       .catch(() => {});
     return () => {
@@ -114,7 +120,7 @@ export default function RecordScreen() {
       audio.load();
       audioRef.current = null;
     };
-  }, [song]);
+  }, [audioId, source, savedPeaks]);
 
   const stop = async () => {
     const session = sessionRef.current;
@@ -130,7 +136,7 @@ export default function RecordScreen() {
       // Where the song was when the first frame was written, by the recorder's clock.
       const clockStart = median(take.samples) ?? take.from;
       const rec = await saveRecording(raw, song, clockStart, still);
-      apply(project.id, (p) => addRecorded(p, rec, take.from, take.hookOnly));
+      apply(project.id, (p) => addRecorded(p, rec, take.from, false));
       haptic.success();
       showToast(`Take ${n + 1} saved and lined up with the song`);
     } catch {
@@ -159,7 +165,7 @@ export default function RecordScreen() {
     const audio = audioRef.current;
     if (!audio) return;
     setSongTime(audio.currentTime);
-    if (audio.paused || audio.currentTime >= to - 0.03) {
+    if (audio.paused || audio.currentTime >= listenUntil - 0.03) {
       audio.pause();
       setListening(false);
     }
@@ -174,6 +180,26 @@ export default function RecordScreen() {
     audioRef.current?.pause();
     setListening(false);
   };
+  // Sliding along the song: it plays from under the finger, seamlessly, and keeps playing after.
+  const lastSeek = useRef(0);
+  const scrub = (t: number) => {
+    const audio = audioRef.current;
+    if (!audio || phase !== 'idle') return;
+    const at = Math.max(take.bounds.start, Math.min(listenUntil - 0.5, t));
+    setSongTime(at);
+    const now = performance.now();
+    if (now - lastSeek.current > 45) {
+      lastSeek.current = now;
+      audio.currentTime = at;
+    }
+    if (audio.paused) {
+      void audio.play().then(
+        () => setListening(true),
+        () => {},
+      );
+    }
+  };
+
   const listen = () => {
     const audio = audioRef.current;
     if (!audio || phase !== 'idle') return;
@@ -237,7 +263,7 @@ export default function RecordScreen() {
       setPhase('idle');
       return;
     }
-    takeRef.current = { startedPerf: performance.now(), samples: [], from, hookOnly };
+    takeRef.current = { startedPerf: performance.now(), samples: [], from };
     audio.pause();
     audio.currentTime = from;
     await waitUntil(ac, downbeat - 0.02, cancelled);
@@ -272,19 +298,30 @@ export default function RecordScreen() {
       to={to}
       takes={project.takes}
       planned={project.takePlan[n]}
-      parts={take.parts}
-      partId={take.partId}
+      placing={take.placing}
+      custom={take.custom}
+      video={take.placing ? undefined : take.bounds}
       peaks={peaks}
       blocked={blocked}
       listening={listening}
       onListen={phase === 'blocked' ? undefined : listen}
-      onPart={(id) => {
+      onFromTop={() => {
         stopListening();
-        take.pick(id);
+        take.fromTop();
       }}
+      onScrub={scrub}
       onStartAt={(t) => {
-        stopListening();
+        // Let go: that's the start. The song keeps playing from there so you hear it.
+        const audio = audioRef.current;
+        if (audio && !audio.paused) audio.currentTime = Math.max(take.bounds.start, Math.min(listenUntil - 0.5, t));
         take.startFrom(t);
+        haptic.select();
+      }}
+      onStartHere={() => {
+        const t = audioRef.current?.currentTime ?? songTime;
+        stopListening();
+        take.startHere(t);
+        haptic.select();
       }}
       onRecord={() => void record()}
       onStop={() => void stop()}

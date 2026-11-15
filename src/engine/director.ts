@@ -46,7 +46,7 @@ export function nextActions(p: Project): ActionSet {
     case 'cut':
       return { primary: { label: 'Review the cut', open: 'cut' } };
     case 'looks':
-      return { primary: { label: 'Lock the plan', run: 'approvePlan' }, secondary: { label: 'Change the plan', open: 'looks' } };
+      return { primary: { label: 'Lock the plan', run: 'approvePlan' }, secondary: { label: 'See every scene', open: 'looks' } };
     case 'switch': {
       if (p.shots.length === 0) return { primary: { label: 'Start the switch', run: 'startSwitch' } };
       const waiting = p.shots.filter((s) => s.status === 'ready' || s.status === 'failed').length;
@@ -72,10 +72,12 @@ export function nextActions(p: Project): ActionSet {
 export function stageIntro(p: Project, id: StageId): { text: string; attachment?: AttachmentKind } {
   switch (id) {
     case 'song':
-      return { text: 'What are we shooting? Bring the track, mark its parts, and tell me where it posts.' };
+      return { text: 'What are we shooting? Bring the track and tell me where it posts.' };
     case 'shoot':
       return {
-        text: 'Your move. Record with the song playing, or upload clips you already shot. One full pass is enough to start; every extra take is another angle I can cut to.',
+        text: p.length
+          ? 'Your move. Pick where you start in the recorder; the video starts there. One full pass is enough, and every extra take is another angle I can cut to. Already shot it? Upload your clips.'
+          : 'Your move. Record with the song playing, or upload clips you already shot. One full pass is enough to start; every extra take is another angle I can cut to.',
         attachment: 'takePlan',
       };
     case 'cut': {
@@ -84,7 +86,7 @@ export function stageIntro(p: Project, id: StageId): { text: string; attachment?
     }
     case 'looks':
       return {
-        text: "Here's the video I'd make: where each part takes place, the b-roll and the effects. Change anything, then lock it and we shoot.",
+        text: 'Describe what you want to shoot: where you are, the mood, anything that should happen. Pick snippet or full video and I plan every scene.',
         attachment: 'plan',
       };
     case 'switch': {
@@ -111,7 +113,8 @@ export function jobResult(p: Project, stage: StageId): { text: string; attachmen
       const s = p.song;
       if (!s) return null;
       const extra = s.source === 'demo' ? ' Lyrics are timed to the beat.' : '';
-      return { text: `Track's mapped: ${Math.round(s.bpm)} BPM, ${s.sections.length} sections, ${formatTime(s.durationSec)}.${extra}` };
+      const parts = s.sections.some((x) => x.scene) ? '' : ` ${s.sections.length} sections,`;
+      return { text: `Track's mapped: ${Math.round(s.bpm)} BPM,${parts} ${formatTime(s.durationSec)}.${extra}` };
     }
     case 'cut': {
       const shots = p.cut.segments.filter((s) => s.takeId).length;
@@ -166,7 +169,12 @@ export const STAGE_WORD: Record<StageId, string> = {
 };
 
 export function lookSummary(p: Project): string {
-  const sections = p.song?.sections ?? [];
+  const duration = p.song?.durationSec ?? 0;
+  const start = p.range?.start ?? 0;
+  const end = p.range?.end ?? duration;
+  // Only what's inside the video: song before or after it is never shot.
+  const sections = (p.song?.sections ?? []).filter((s) => s.end > start + 0.01 && s.start < end - 0.01);
+  const unit = sections.some((s) => s.scene) ? 'scenes' : 'sections';
   const groups = new Map<string, string[]>();
   for (const s of sections) {
     const look = p.looks[s.id];
@@ -174,5 +182,5 @@ export function lookSummary(p: Project): string {
     const title = locationTitle(look.location);
     groups.set(title, [...(groups.get(title) ?? []), s.label]);
   }
-  return [...groups.entries()].map(([title, labels]) => `${title} for ${labels.length > 2 ? `${labels.length} sections` : labels.join(' and ')}`).join(', ');
+  return [...groups.entries()].map(([title, labels]) => `${title} for ${labels.length > 2 ? `${labels.length} ${unit}` : labels.join(' and ')}`).join(', ');
 }

@@ -20,6 +20,7 @@ import {
   setFxPack,
   setLook,
   setLookEverywhere,
+  setLookPrompt,
   settle,
   skipStage,
   startSwitch,
@@ -91,7 +92,7 @@ export function settleAuto(p: Project, maxRounds = 40): Project {
 
 /** Everything the artist can ask the director to change. Claude emits the same commands as tool calls. */
 export type AgentCommand =
-  | { type: 'setLook'; section: string; location: LocationKind }
+  | { type: 'setLook'; section: string; location: LocationKind | 'custom'; prompt?: string }
   | { type: 'setFxPack'; pack: FxPackId }
   | { type: 'setFxIntensity'; intensity: FxIntensity }
   | { type: 'toggleEffect'; effect: FxEffectId; on: boolean }
@@ -145,7 +146,11 @@ export function applyCommand(p: Project, cmd: AgentCommand): CommandResult {
       const ids = sectionIds(p, cmd.section);
       if (ids.length === 0) return { project: p, ok: false, note: `I don't see a section called "${cmd.section}" in this song.` };
       const all = ids.length === (p.song?.sections.length ?? 0);
-      const next = all ? setLookEverywhere(p, cmd.location) : ids.reduce((acc, id) => setLook(acc, id, cmd.location), p);
+      const location = cmd.location;
+      let next = all && location !== 'custom' ? setLookEverywhere(p, location) : ids.reduce((acc, id) => setLook(acc, id, location), p);
+      // A prompt is the world in the director's words: the preset's scene, or a place the presets don't have.
+      const prompt = cmd.prompt?.trim();
+      if (prompt && next !== p) next = ids.reduce((acc, id) => setLookPrompt(acc, id, prompt), next);
       return result(next, `${locationTitle(cmd.location)} for ${sectionWord(p, cmd.section)}.`, 'Looks are locked once the switch starts. Tap Plan on the slate to go back and change them.');
     }
     case 'setFxPack': {

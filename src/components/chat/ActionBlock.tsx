@@ -2,11 +2,12 @@ import { PlayCircle } from '@/components/icons';
 import { StyleSheet, View } from 'react-native';
 
 import { nextActions, type NextAction } from '@/engine/director';
-import { trackerView } from '@/engine/stages';
+import { currentStage, trackerView } from '@/engine/stages';
 import type { Project } from '@/engine/types';
 import { color, radius, space } from '@/theme/tokens';
 
 import { Button } from '../Button';
+import { PlanBrief } from '../PlanBrief';
 import { T } from '../T';
 
 interface Props {
@@ -41,9 +42,12 @@ export function ActionBlock({ project, onAction, onWatchHow }: Props) {
     );
   }
 
+  // The plan is the artist's words, so it's a box to write in rather than a button.
+  const planning = currentStage(project)?.id === 'looks' && !project.planApproved;
+
   return (
-    <View style={styles.wrap}>
-      {primary ? <Button label={primary.label} onPress={() => onAction(primary)} /> : null}
+    <View style={[styles.wrap, planning && styles.wide]}>
+      {planning ? <PlanBrief project={project} /> : primary ? <Button label={primary.label} onPress={() => onAction(primary)} /> : null}
       <View style={styles.row}>
         {!view.wrapped ? <Button label="Watch how" variant="quiet" icon={PlayCircle} onPress={onWatchHow} /> : null}
         {secondary ? <Button label={secondary.label} variant="quiet" onPress={() => onAction(secondary)} /> : null}
@@ -57,6 +61,10 @@ const styles = StyleSheet.create({
     paddingTop: space.m,
     paddingLeft: 42,
     gap: space.xs,
+  },
+  wide: {
+    // The plan box is the whole conversation at this point, so it gets the full width.
+    paddingLeft: 0,
   },
   row: {
     flexDirection: 'row',

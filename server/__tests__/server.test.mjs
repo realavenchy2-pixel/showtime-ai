@@ -259,6 +259,21 @@ describe('The director (Claude)', () => {
     expect(call.body.messages[0].content).toContain('put the hooks on the beach');
   });
 
+  it('plans the video from the artist\'s description', async () => {
+    const fetch = fakeFetch({
+      'POST /v1/messages': answer({
+        reply: 'Rooftop first, then the white room.',
+        commands: [{ type: 'setLook', section: 'Scene 1', location: 'custom', prompt: 'A rooftop at night over the city.' }, { type: 'setLook', section: 'Scene 2', location: 'whiteVoid' }],
+      }),
+    });
+    const out = await direct({ apiKey: 'ak', fetch }, { project: { title: 'Out the Mud' }, text: 'rooftop at night then a white room', task: 'plan' });
+    expect(out.commands).toHaveLength(2);
+    const content = fetch.calls[0].body.messages[0].content;
+    expect(content).toContain('locking the plan');
+    expect(content).toContain('rooftop at night then a white room');
+    expect(fetch.calls[0].body.max_tokens).toBe(2048);
+  });
+
   it('surfaces a Claude error', async () => {
     const fetch = fakeFetch({ 'POST /v1/messages': { __status: 429, body: { error: { type: 'rate_limit_error', message: 'Slow down' } } } });
     await expect(direct({ apiKey: 'ak', fetch }, { project: {}, text: 'hi' })).rejects.toThrow('Slow down');
@@ -266,6 +281,9 @@ describe('The director (Claude)', () => {
 
   it('drops malformed commands', () => {
     expect(cleanCommands('nope')).toEqual([]);
+    expect(cleanCommands([{ type: 'setLook', section: 'Scene 1', location: 'custom' }, { type: 'setLook', section: 'Scene 2', location: 'custom', prompt: ' A rooftop at dawn. ' }])).toEqual([
+      { type: 'setLook', section: 'Scene 2', location: 'custom', prompt: 'A rooftop at dawn.' },
+    ]);
     expect(cleanCommands([{ type: 'toggleEffect', effect: 'shake' }, { type: 'addBroll', shot: '  ' }, { type: 'goBack', stage: 'mars' }, { type: 'run', extra: 1 }])).toEqual([{ type: 'toggleEffect', effect: 'shake', on: true }, { type: 'run' }]);
   });
 
@@ -274,7 +292,7 @@ describe('The director (Claude)', () => {
     const union = agent.slice(agent.indexOf('export type AgentCommand ='), agent.indexOf('export interface CommandResult'));
     const types = [...union.matchAll(/type: '(\w+)'/g)].map((m) => m[1]);
     expect([...COMMAND_ENUMS.type].sort()).toEqual([...types].sort());
-    expect([...COMMAND_ENUMS.location].sort()).toEqual(LOCATIONS.map((l) => l.id).sort());
+    expect([...COMMAND_ENUMS.location].sort()).toEqual([...LOCATIONS.map((l) => l.id), 'custom'].sort());
     expect([...COMMAND_ENUMS.pack].sort()).toEqual(FX_PACKS.map((p) => p.id).sort());
     expect([...COMMAND_ENUMS.effect].sort()).toEqual(FX_EFFECTS.map((e) => e.id).sort());
     expect([...COMMAND_ENUMS.stage].sort()).toEqual(STAGES.map((s) => s.id).sort());

@@ -9,7 +9,7 @@ import { Button } from '../Button';
 import { SongForm, songChoiceReady, type SongChoice } from '../SongForm';
 import { JobBar, StageScreen, WrappedNote } from './StageChrome';
 
-/** Stage 1, reopened: change the track, its parts or where it posts. */
+/** Stage 1, reopened: change the track or where it posts. */
 export function SongStage({ project }: { project: Project }) {
   const apply = useApp((s) => s.apply);
   const [choice, setChoice] = useState<SongChoice>({ song: project.song, formats: project.formats });

@@ -1,6 +1,13 @@
-import { jobResult, stageIntro, takeLine } from './director';
+import { formatTime, jobResult, stageIntro, takeLine } from './director';
 import { emptyEffects, planForPack } from './fx';
-import { barSec, DEFAULT_TAKE_PLAN, lookFor, pitchBroll, suggestedLooks } from './samples';
+import {
+  barSec,
+  DEFAULT_TAKE_PLAN,
+  lookFor,
+  pitchBroll,
+  suggestedLooks,
+  withScenes,
+} from './samples';
 import { canSkip, currentStage, STAGE_BY_ID, STAGES } from './stages';
 import { framesFor, HANDLE_SEC, maxShotSec, RECORD_FPS, SWITCHX } from './switchx';
 import type {
@@ -28,6 +35,7 @@ import type {
   TakeAngle,
   TakeScope,
   Vibe,
+  VideoLength,
 } from './types';
 
 // Pure project transitions. Every function returns a new project and never mutates its input.
@@ -53,7 +61,9 @@ function withIntro(before: Project, after: Project): Project {
   const prev = currentStage(before)?.id;
   const next = currentStage(after)?.id;
   if (!next || prev === next) return after;
-  const ready = next === 'looks' ? pitchPlan(after) : after;
+  // The plan opens with the director's pick of snippet or full video, which the artist can change.
+  const scened = !!after.song?.sections.some((s) => s.scene);
+  const ready = next === 'looks' ? pitchPlan(scened && !after.length ? setVideoLength(after, suggestedLength(after)) : after) : after;
   const intro = stageIntro(ready, next);
   return post(ready, 'director', intro.text, { stage: next, attachment: intro.attachment });
 }
@@ -82,10 +92,96 @@ export function snippetRange(song: Song, start: number, seconds: number): { star
 /** The plan's length: the full song, or a snippet. Changing it re-pitches the b-roll to fit. */
 export function setRange(p: Project, range: { start: number; end: number } | undefined): Project {
   if (p.planApproved || p.job || !p.song) return p;
-  const next: Project = { ...p, range: range ? { start: round(range.start), end: round(range.end) } : undefined };
-  if (JSON.stringify(next.range) === JSON.stringify(p.range)) return p;
-  const kept = { ...next, broll: { ...next.broll, ideas: next.broll.ideas.filter((i) => i.fromInbox) } };
-  return pitchPlan(kept);
+  const r = range ? { start: round(range.start), end: round(range.end) } : undefined;
+  if (JSON.stringify(r) === JSON.stringify(p.range)) return p;
+  // Scenes are laid out over the video, so a new length means new scenes and a fresh pitch.
+  const scened = p.song.sections.some((s) => s.scene);
+  const song = scened ? withScenes(p.song, r) : p.song;
+  const next: Project = { ...p, range: r, song, looks: scened ? {} : p.looks, broll: { ...p.broll, ideas: p.broll.ideas.filter((i) => i.fromInbox) } };
+  return pitchPlan(next);
+}
+
+/** How long a snippet runs. The director rounds it to whole bars. */
+export const SNIPPET_SEC = 30;
+
+/** The stretch of song a video covers: from the artist's start point, a snippet or to the end. */
+export function rangeFor(song: Song, start: number, length: VideoLength): { start: number; end: number } | undefined {
+  const from = clamp(start, 0, Math.max(0, song.durationSec - 1));
+  if (length === 'full') return from < 0.05 ? undefined : { start: round(from), end: round(song.durationSec) };
+  const bar = barSec(song.bpm);
+  const bars = Math.max(1, Math.round(SNIPPET_SEC / bar));
+  return { start: round(from), end: round(Math.min(song.durationSec, from + bars * bar)) };
+}
+
+export function videoLength(p: Project): VideoLength {
+  if (p.length) return p.length;
+  return p.range && p.song && p.range.end < p.song.durationSec - 0.05 ? 'snippet' : 'full';
+}
+
+/** The director's call when nobody picked: vertical-only videos are made for a snippet. */
+export function suggestedLength(p: Project): VideoLength {
+  return p.formats.length > 0 && p.formats.every((f) => f === '9:16') ? 'snippet' : 'full';
+}
+
+/** Snippet or full video, from the start point the artist has (the top of the song until the first take). */
+export function setVideoLength(p: Project, length: VideoLength): Project {
+  if (!p.song || p.planApproved || p.job) return p;
+  return setRange({ ...p, length }, rangeFor(p.song, videoRange(p).start, length));
+}
+
+/** What the artist typed into the plan, kept as they go so it is there when they come back. */
+export function setBrief(p: Project, text: string): Project {
+  if (p.planApproved) return p;
+  return { ...p, brief: text.slice(0, 1200) };
+}
+
+/**
+ * The first take says where the video starts. The plan was laid out from the top of the song;
+ * here it moves to the artist's start point, with scenes, looks and cutaways in the same order.
+ */
+function placeVideo(p: Project, start: number): Project {
+  const song = p.song;
+  if (!song || !p.length || p.takes.length > 0) return p;
+  const range = rangeFor(song, start, p.length);
+  if (JSON.stringify(range) === JSON.stringify(p.range)) return p;
+  const old = videoRange(p);
+  const span = range ?? { start: 0, end: song.durationSec };
+  const shift = span.start - old.start;
+  const scened = song.sections.some((s) => s.scene);
+  const placed = scened ? withScenes(song, range) : song;
+  let looks = p.looks;
+  if (scened) {
+    const before = song.sections.filter((s) => s.scene);
+    const after = placed.sections.filter((s) => s.scene);
+    const suggested = suggestedLooks(placed.sections);
+    looks = Object.fromEntries(
+      placed.sections.map((s) => {
+        if (!s.scene) return [s.id, p.looks[s.id] ?? suggested[s.id]];
+        // Scene n of the new layout takes the look planned for the same stretch of the old one.
+        const i = after.indexOf(s);
+        const from = before[Math.min(before.length - 1, Math.floor((i * before.length) / after.length))];
+        return [s.id, (from && p.looks[from.id]) ?? suggested[s.id]];
+      }),
+    );
+  }
+  const ideas = p.broll.ideas.flatMap((idea) => {
+    if (idea.at === undefined) return [idea];
+    let at = round(idea.at + shift);
+    if (at < span.start - 0.01 || at + idea.durationSec > span.end + 0.01) {
+      // The director's own pitches can go; the artist's ideas stay, moved inside the video.
+      if (!idea.fromInbox) return [];
+      at = round(clamp(at, span.start, Math.max(span.start, span.end - idea.durationSec)));
+    }
+    const section = placed.sections.find((s) => at >= s.start - 1e-6 && at < s.end - 1e-6);
+    return [{ ...idea, at, sectionId: section?.id }];
+  });
+  return { ...p, range, song: placed, looks, broll: { ...p.broll, ideas } };
+}
+
+function placementLine(p: Project): string {
+  const r = videoRange(p);
+  if (p.length === 'snippet') return `The video starts at ${formatTime(r.start)} and runs ${Math.round(r.end - r.start)} seconds. Every take after this one stays inside it.`;
+  return r.start < 0.05 ? 'The video runs the full song from the top.' : `The video starts at ${formatTime(r.start)} and runs to the end of the song.`;
 }
 
 /** A default for the effects pack when nobody picked a vibe: by tempo. */
@@ -165,6 +261,8 @@ export interface NewProjectInput {
   vibe?: Vibe;
   formats: Format[];
   pipeline?: Project['pipeline'];
+  /** Where recording starts and stops. Leave it out for the whole song. */
+  range?: { start: number; end: number };
 }
 
 export function formatName(f: Format): string {
@@ -199,7 +297,8 @@ function setSong(p: Project, input: NewProjectInput, first: boolean): Project {
     broll,
     // New parts mean a new plan to lock; a snippet that no longer fits the song goes too.
     planApproved: changedSong ? false : p.planApproved,
-    range: changedSong && p.range && p.range.end > input.song.durationSec ? undefined : p.range,
+    // Scenes are laid out from the top for a new song; the first take places them again.
+    range: 'range' in input ? input.range : changedSong && (input.song.sections.some((s) => s.scene) || (p.range && p.range.end > input.song.durationSec)) ? undefined : p.range,
     song: input.song,
     vibe: input.vibe ?? p.vibe ?? vibeForTempo(input.song.bpm),
     formats: input.formats,
@@ -296,12 +395,16 @@ export interface NewTake {
 }
 
 export function addTake(p: Project, input: NewTake): Project {
-  const song = p.song;
-  if (!song || p.shootLocked) return p;
+  if (!p.song || p.shootLocked) return p;
+  const before = p;
+  // The first take places the video in the song; later takes land inside it.
+  const placed = p.takes.length === 0 ? placeVideo(p, input.fromSec) : p;
+  if (placed !== p) p = post(placed, 'director', placementLine(placed), { stage: 'shoot' });
+  const song = p.song!;
   const n = p.takes.reduce((max, t) => Math.max(max, t.n), 0) + 1;
   const start = clamp(input.fromSec, 0, song.durationSec);
   const end = clamp(start + input.durationSec, start, song.durationSec);
-  if (end - start < 0.5) return p;
+  if (end - start < 0.5) return before;
   const take: Take = {
     id: uid('take'),
     n,
@@ -321,7 +424,6 @@ export function addTake(p: Project, input: NewTake): Project {
     sync: input.sync ?? 'clock',
     flag: input.flag,
   };
-  const before = p;
   let next: Project = { ...p, takes: [...p.takes, take] };
   next = post(next, 'director', takeLine(next, take), { stage: 'shoot' });
   return withIntro(before, next);

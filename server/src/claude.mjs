@@ -7,7 +7,7 @@ import { ProviderError } from './beeble.mjs';
 /** Mirrors `AgentCommand` in src/engine/agent.ts. A test keeps the two in step. */
 export const COMMAND_ENUMS = {
   type: ['setLook', 'setFxPack', 'setFxIntensity', 'toggleEffect', 'redoShot', 'approveShots', 'reshuffle', 'addBroll', 'skipBroll', 'run', 'wrapShoot', 'lockEdit', 'setAutonomy', 'goBack', 'idea'],
-  location: ['beach', 'alley', 'whiteVoid', 'darkVoid', 'hangingMic'],
+  location: ['beach', 'alley', 'whiteVoid', 'darkVoid', 'hangingMic', 'custom'],
   pack: ['drill', 'trapHype', 'melodic', 'boomBap', 'dark'],
   intensity: ['Clean', 'Hype', 'Unhinged'],
   effect: ['punchIn', 'shake', 'flash', 'rgbSplit', 'glitch', 'vhs', 'stutter', 'kineticLyrics', 'textBehind', 'glowOutline'],
@@ -34,10 +34,11 @@ const TOOL = {
               type: 'string',
               enum: COMMAND_ENUMS.type,
               description:
-                'setLook: put a section in a location (needs section, location). setFxPack (pack). setFxIntensity (intensity). toggleEffect (effect, on). redoShot: re-render one switched shot (n). approveShots: approve every shot that is back. reshuffle: re-roll which take plays where. addBroll: add a cutaway (shot = what the camera sees). skipBroll. run: approve the plan and start the pipeline. wrapShoot: the artist is done recording. lockEdit: the artist is happy with the edit. setAutonomy (autonomy). goBack: reopen an earlier stage, which resets the later ones (stage). idea: file something for a later stage (stage, text).',
+                'setLook: put a section in a location (needs section, location; prompt optionally describes the world in one or two sentences, and is required for location custom, a place the presets do not have). setFxPack (pack). setFxIntensity (intensity). toggleEffect (effect, on). redoShot: re-render one switched shot (n). approveShots: approve every shot that is back. reshuffle: re-roll which take plays where. addBroll: add a cutaway (shot = what the camera sees). skipBroll. run: approve the plan and start the pipeline. wrapShoot: the artist is done recording. lockEdit: the artist is happy with the edit. setAutonomy (autonomy). goBack: reopen an earlier stage, which resets the later ones (stage). idea: file something for a later stage (stage, text).',
             },
             section: { type: 'string', description: 'A section id, a section label such as "Verse 1", a kind such as "hook" or "verses", or "all".' },
             location: { type: 'string', enum: COMMAND_ENUMS.location },
+            prompt: { type: 'string', description: 'For setLook: the world SwitchX builds around the artist, in plain words. Where it is, the light, what moves.' },
             pack: { type: 'string', enum: COMMAND_ENUMS.pack },
             intensity: { type: 'string', enum: COMMAND_ENUMS.intensity },
             effect: { type: 'string', enum: COMMAND_ENUMS.effect },
@@ -54,11 +55,12 @@ const TOOL = {
   },
 };
 
-const SYSTEM = `You are the director inside Showtime AI, an app that turns an artist's raw performance takes into a finished music video. The artist records (or uploads) takes with their song playing. You run the rest of the pipeline and talk with them while it runs: song, shoot, cut, looks, switch, b-roll, edit, export.
+const SYSTEM = `You are the director inside Showtime AI, an app that turns an artist's raw performance takes into a finished music video. The artist records (or uploads) takes with their song playing. You run the rest of the pipeline and talk with them while it runs: song, plan, shoot, cut, switch, b-roll, edit, export.
 
 How the pipeline works, so your answers are accurate:
+- Plan: before recording, the artist describes the video and picks a snippet (about 30 seconds) or the full song. The video is split into scenes of about 20 seconds ("Scene 1", "Scene 2", ...), each with its own look. The artist picks where the video starts right before the first take; the plan moves with it.
 - Cut: takes are lined up with the song and cut on the bar grid. Each shot sent to the switch is capped by the SwitchX version in use (see switch.maxFrames in the project state).
-- Looks: every section of the song gets a location. SwitchX rebuilds the world around the artist from a prompt and reference images; the performance stays exactly as shot.
+- Looks: every scene (or section, in older projects) gets a location. SwitchX rebuilds the world around the artist from a prompt and reference images; the performance stays exactly as shot.
 - B-roll: short generated cutaways placed in the verses. Hooks stay on the performance.
 - Edit: effects land on the beat grid. Packs: drill, trapHype, melodic, boomBap, dark. Intensity: Clean (hooks only), Hype, Unhinged.
 - In "auto" mode you run every step yourself and stop only for the plan, shots that came back with a note, and the finished edit.
@@ -67,11 +69,15 @@ How you talk: like a music video director on set. Plain words, confident and bri
 
 How you act: you change the project only through commands. Use the fewest commands that do what the artist asked, and none they did not ask for (the one exception: file an "idea" when they mention something for a later stage). If a request could mean two different things, ask one short question and issue no commands. If the artist asks for something no command can do, say so plainly and offer the closest thing you can do.`;
 
+const PLAN_BRIEF = (text) => `The artist is locking the plan. In their words, the video they want: "${text}"
+
+Lay out the plan with commands: a setLook for every scene in the project state (by its label, such as "Scene 1"), in the order the artist described things, with a prompt that puts their words into the world SwitchX builds. Use a preset location when one fits and custom with a prompt when none does. Add up to three addBroll cutaways for things they mentioned that are not places to perform. Set the effects pack that fits what they described. Then tell the artist, in one or two sentences, how the video moves from scene to scene.`;
+
 const EDIT_BRIEF = `The artist has not asked anything. Review the edit plan against the song's vibe, tempo and sections, and set the effects pack, intensity and individual effects you would cut this video with. Add at most two b-roll ideas if the verses need them. Then tell the artist, in two sentences, what you chose and why.`;
 
 /**
  * @param {{ apiKey: string, model?: string, fetch?: typeof fetch, base?: string }} cfg
- * @param {{ project: object, history?: { from: string, text: string }[], text?: string, task?: 'chat' | 'edit' }} input
+ * @param {{ project: object, history?: { from: string, text: string }[], text?: string, task?: 'chat' | 'edit' | 'plan' }} input
  * @returns {Promise<{ reply: string, commands: object[], model: string }>}
  */
 export async function direct(cfg, input) {
@@ -81,7 +87,8 @@ export async function direct(cfg, input) {
     .slice(-12)
     .map((m) => `${m.from === 'user' ? 'Artist' : 'Director'}: ${m.text}`)
     .join('\n');
-  const ask = input.task === 'edit' ? EDIT_BRIEF : `The artist says: ${String(input.text ?? '').slice(0, 2000)}`;
+  const said = String(input.text ?? '').slice(0, 2000);
+  const ask = input.task === 'edit' ? EDIT_BRIEF : input.task === 'plan' ? PLAN_BRIEF(said) : `The artist says: ${said}`;
   const content = [
     `<project>\n${JSON.stringify(input.project)}\n</project>`,
     history ? `<conversation>\n${history}\n</conversation>` : '',
@@ -95,7 +102,7 @@ export async function direct(cfg, input) {
     headers: { 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({
       model,
-      max_tokens: 1024,
+      max_tokens: input.task === 'plan' ? 2048 : 1024,
       system: SYSTEM,
       messages: [{ role: 'user', content }],
       tools: [TOOL],
@@ -121,9 +128,12 @@ export function cleanCommands(raw) {
     if (!c || typeof c !== 'object' || !COMMAND_ENUMS.type.includes(c.type)) continue;
     const inSet = (key) => COMMAND_ENUMS[key].includes(c[key]);
     switch (c.type) {
-      case 'setLook':
-        if (typeof c.section === 'string' && inSet('location')) out.push({ type: c.type, section: c.section, location: c.location });
+      case 'setLook': {
+        const prompt = typeof c.prompt === 'string' ? c.prompt.trim().slice(0, 600) : '';
+        if (typeof c.section !== 'string' || !inSet('location') || (c.location === 'custom' && !prompt)) break;
+        out.push(prompt ? { type: c.type, section: c.section, location: c.location, prompt } : { type: c.type, section: c.section, location: c.location });
         break;
+      }
       case 'setFxPack':
         if (inSet('pack')) out.push({ type: c.type, pack: c.pack });
         break;

@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 
-import { addUserMessage, connectLive, resumeSwitch } from '@/engine/actions';
+import { addUserMessage, approvePlan, connectLive, resumeSwitch, setVideoLength } from '@/engine/actions';
 import { applyReply, replyLocally } from '@/engine/agent';
+import { lockPlan as lockPlanHere, planFromBrief } from '@/engine/brief';
 import { useApp } from '@/engine/store';
 import { recentChat, summarize } from '@/engine/summary';
-import type { Project } from '@/engine/types';
+import type { Project, VideoLength } from '@/engine/types';
 
 import { askDirector, cleanUrl, getCaps, sameOriginServer, savedServer, saveServer, StudioError, toLiveCaps, type ServerCaps, type ServerConfig } from './client';
 import { pickUp, type RunnerHost } from './runner';
@@ -142,6 +143,30 @@ export function sendToDirector(projectId: string, input: string): void {
   askDirector(cfg, { project: summarize(now), history: recentChat(now).slice(0, -1), text })
     .then(({ reply, commands }) => useApp.getState().apply(projectId, (p) => applyReply(p, reply, commands)))
     .catch(() => useApp.getState().apply(projectId, (p) => replyLocally(p, text)))
+    .finally(() => setThinking(false));
+}
+
+/**
+ * The artist locks the plan. Claude reads the description into scenes when the server has it;
+ * the built-in director does otherwise, or if Claude can't be reached.
+ */
+export function lockPlan(projectId: string, input: { brief: string; length: VideoLength }): void {
+  const app = useApp.getState();
+  const cfg = liveConfig();
+  const project = app.projects[projectId];
+  const brief = input.brief.trim();
+  if (!project || project.planApproved) return;
+  if (!cfg || !directorIsLive(project) || !brief) {
+    app.apply(projectId, (p) => lockPlanHere(p, input));
+    return;
+  }
+  app.apply(projectId, (p) => addUserMessage({ ...setVideoLength(p, input.length), brief }, brief));
+  const setThinking = (on: boolean) => useServer.setState((s) => ({ thinking: { ...s.thinking, [projectId]: on } }));
+  setThinking(true);
+  const now = useApp.getState().projects[projectId];
+  askDirector(cfg, { project: summarize(now), history: [], text: brief, task: 'plan' })
+    .then(({ reply, commands }) => useApp.getState().apply(projectId, (p) => approvePlan(applyReply(p, reply, commands))))
+    .catch(() => useApp.getState().apply(projectId, (p) => approvePlan(planFromBrief(p, brief))))
     .finally(() => setThinking(false));
 }
 

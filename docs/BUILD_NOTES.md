@@ -53,7 +53,10 @@ Keep the checklist current. A session can end without warning.
 - [x] Export verified with a real file check (headless run drops frames at 1080p; an offline frame-by-frame export is the fix)
 - [x] Server (`server/`) and live wiring (`src/live/`): SwitchX 3.0 through the Product API, public API fallback, Claude director, fal H3 b-roll. Verified end to end against stand-in providers (`tools/e2e_live.py` + `tools/mock_studio.mjs` in the scratchpad), not yet against real keys
 - [x] Brand: the artist's pink S logo, accent `#FD1B55` (icons are upscaled from a 300 px crop; ask for the vector)
-- [x] Artist-first front half: the artist marks the song's parts while it plays (no auto hook guessing), no genre pick (effects pack defaults by tempo), the plan comes before the shoot with full song or a 15/30/60-second snippet, the recorder picks any part, a tap point, and has Listen; the stage checklist scrolls
+- [x] Artist-first front half: no genre pick (effects pack defaults by tempo), the stage checklist scrolls
+- [x] No verse or hook: the director lays the video out in ~20-second scenes on whole bars (`scenesFor`, `Section.scene`)
+- [x] Plan box before the shoot: "Describe what you want to shoot" plus Snippet (about 30 seconds) or Full video. `lockPlan` reads the words into scenes, cutaways and a pack (`planFromBrief`); with the studio server, Claude plans it (`task: 'plan'`, `setLook` with `custom` and a prompt)
+- [x] Start point right before recording: slide along the song while it plays and let go, or hit Start here. The first take places the video (`placeVideo`); later takes stay inside it
 - [ ] First run with real keys: `npm run server:doctor`, then one short switch
 - [ ] Offline export (every frame, any device speed), generated reference frames, Select/custom mattes, native live switch
 - [ ] v2 merged to main

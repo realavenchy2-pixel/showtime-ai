@@ -175,7 +175,7 @@ export function makeReference(cfg: ServerConfig, input: { prompt: string; aspect
 
 export function askDirector(
   cfg: ServerConfig,
-  input: { project: Record<string, unknown>; history: { from: string; text: string }[]; text?: string; task?: 'chat' | 'edit' },
+  input: { project: Record<string, unknown>; history: { from: string; text: string }[]; text?: string; task?: 'chat' | 'edit' | 'plan' },
 ): Promise<{ reply: string; commands: AgentCommand[] }> {
   return call(cfg, 'POST', '/v1/director', input, 60000);
 }

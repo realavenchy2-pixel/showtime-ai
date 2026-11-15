@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Upload, X } from '@/components/icons';
-import { addTake, coverage, finishShooting, removeClip, removeTake } from '@/engine/actions';
+import { addTake, coverage, finishShooting, removeClip, removeTake, videoRange } from '@/engine/actions';
 import { formatTime } from '@/engine/director';
 import { useApp } from '@/engine/store';
 import type { Clip, Project, Take } from '@/engine/types';
@@ -74,7 +74,7 @@ export function ShootStage({ project }: { project: Project }) {
         )
       }>
       <View style={stageStyles.block}>
-        <SectionTitle detail={song ? coverageLine(n, covered, song.durationSec) : undefined}>Takes</SectionTitle>
+        <SectionTitle detail={song ? coverageLine(project, covered) : undefined}>Takes</SectionTitle>
         {project.takes.map((t) => (
           <TakeRow key={t.id} take={t} locked={locked} onRemove={() => apply(project.id, (p) => removeTake(p, t.id))} />
         ))}
@@ -123,9 +123,14 @@ export function ShootStage({ project }: { project: Project }) {
   );
 }
 
-function coverageLine(takes: number, covered: number, duration: number): string {
-  if (takes === 0) return 'One full pass is enough to start. Every extra take is another angle to cut to.';
-  if (covered > 0.97) return 'Your takes cover the whole song.';
+function coverageLine(p: Project, covered: number): string {
+  const range = videoRange(p);
+  const duration = range.end - range.start;
+  const whole = p.length === 'snippet' || (p.range && range.end < (p.song?.durationSec ?? 0) - 0.05) ? 'snippet' : 'video';
+  if (p.takes.length === 0) {
+    return p.length ? 'Your first take picks where the video starts. One full pass is enough; every extra take is another angle to cut to.' : 'One full pass is enough to start. Every extra take is another angle to cut to.';
+  }
+  if (covered > 0.97) return `Your takes cover the whole ${whole}, ${formatTime(range.start)} to ${formatTime(range.end)}.`;
   return `Your takes cover ${formatTime(covered * duration)} of ${formatTime(duration)}. I carry the rest with b-roll unless you record more.`;
 }
 

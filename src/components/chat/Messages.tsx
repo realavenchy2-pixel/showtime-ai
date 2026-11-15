@@ -93,7 +93,7 @@ function TakePlan({ project }: { project: Project }) {
                 {t.angle}
               </T>
               <T v="caption" c="ash">
-                {t.scope === 'Full song' && project.range ? 'Whole snippet' : t.scope}
+                {scopeLine(project, t.scope)}
               </T>
             </View>
             {done ? <Check size={18} color={color.chalk} /> : null}
@@ -104,14 +104,24 @@ function TakePlan({ project }: { project: Project }) {
   );
 }
 
+function scopeLine(p: Project, scope: string): string {
+  const snippet = p.length === 'snippet' || (!!p.range && !!p.song && p.range.end < p.song.durationSec - 0.05);
+  if (scope === 'Full song') return snippet ? 'Whole snippet' : p.length ? 'Whole video' : 'Full song';
+  // Scenes have no hook: an extra angle goes wherever the artist wants one.
+  return p.song?.sections.some((s) => s.scene) ? 'Any stretch you want' : scope;
+}
+
 function CutSummary({ project }: { project: Project }) {
   const song = project.song;
   if (!song) return null;
+  const range = videoRange(project);
+  const sections = song.sections.filter((s) => s.end > range.start + 0.01 && s.start < range.end - 0.01);
+  const hooks = sections.some((s) => s.kind === 'hook');
   const shots = project.cut.segments.filter((g) => g.takeId).length;
   return (
     <View style={styles.card}>
       <View style={styles.strip}>
-        {song.sections.map((s) => {
+        {sections.map((s) => {
           const n = project.cut.segments.filter((g) => g.sectionId === s.id).length;
           return (
             <View key={s.id} style={[styles.stripPart, { flex: s.end - s.start }]}>
@@ -120,7 +130,7 @@ function CutSummary({ project }: { project: Project }) {
                   <View key={i} style={[styles.cutMark, { left: `${((i + 1) / n) * 100}%` }]} />
                 ))}
               </View>
-              {(s.end - s.start) / song.durationSec > 0.08 ? (
+              {(s.end - s.start) / Math.max(1, range.end - range.start) > 0.08 ? (
                 <T v="micro" c="ash" numberOfLines={1}>
                   {s.label}
                 </T>
@@ -130,10 +140,20 @@ function CutSummary({ project }: { project: Project }) {
         })}
       </View>
       <T v="caption" c="smoke">
-        {`${shots} shots across ${formatTime(song.durationSec)}. Hooks are the brighter bars.`}
+        {`${shots} shots across ${formatTime(range.end - range.start)}.${hooks ? ' Hooks are the brighter bars.' : ''}`}
       </T>
     </View>
   );
+}
+
+function lengthLine(p: Project): string {
+  const range = videoRange(p);
+  // Until the first take, the video has a length but no start point yet.
+  if (p.length && p.takes.length === 0) {
+    return p.length === 'snippet' ? `Snippet, ${formatTime(range.end - range.start)} from wherever you start` : 'Full video, from wherever you start to the end';
+  }
+  if (p.range && p.song && range.end < p.song.durationSec - 0.05) return `${formatTime(range.end - range.start)} snippet, ${formatTime(range.start)} to ${formatTime(range.end)}`;
+  return range.start > 0.05 ? `Full video, ${formatTime(range.start)} to the end` : `Full song, ${formatTime(range.end)}`;
 }
 
 /** The director's pitch: where it happens, the cutaways, the effects, and what it takes to render. */
@@ -141,11 +161,10 @@ function PlanCard({ project }: { project: Project }) {
   const budget = estimateBudget(project);
   const cutaways = project.broll.ideas.filter((i) => i.keep);
   const pack = fxPack(project.fx.pack);
-  const range = videoRange(project);
   const shots = project.cut.segments.filter((s) => s.takeId).length;
   const rows: { label: string; value: string }[] = [
-    { label: 'Length', value: project.range ? `${formatTime(range.end - range.start)} snippet, ${formatTime(range.start)} to ${formatTime(range.end)}` : `Full song, ${formatTime(range.end)}` },
-    { label: 'Looks', value: lookSummary(project) || 'Pick a look for every section' },
+    { label: 'Length', value: lengthLine(project) },
+    { label: 'Looks', value: lookSummary(project) || 'Pick a look for every scene' },
     {
       label: 'B-roll',
       value: cutaways.length ? `${cutaways.length} ${cutaways.length === 1 ? 'cutaway' : 'cutaways'}: ${cutaways.map((i) => i.shot.split(',')[0].toLowerCase()).join('; ')}` : 'None',

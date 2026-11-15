@@ -1,57 +1,49 @@
 import { useState } from 'react';
 
-import { videoRange } from '@/engine/actions';
-import type { Project, SectionKind } from '@/engine/types';
+import { rangeFor, videoRange } from '@/engine/actions';
+import type { Project } from '@/engine/types';
 
-export interface TakePart {
-  id: string;
-  label: string;
-  from: number;
-  to: number;
-  kind?: SectionKind;
+/** Snaps a moment to the nearest beat, so a take starts where the music does. */
+function onBeat(p: Project, t: number): number {
+  const song = p.song!;
+  const beat = 60 / song.bpm;
+  return song.downbeatSec + Math.round((t - song.downbeatSec) / beat) * beat;
 }
 
-/** What the artist can record: the whole video, or any one part of it. */
-export function takeParts(p: Project): TakePart[] {
-  const song = p.song;
-  if (!song) return [];
-  const range = videoRange(p);
-  const all: TakePart = { id: 'all', label: p.range ? 'Whole snippet' : 'Full song', from: range.start, to: range.end };
-  const parts = song.sections
-    .filter((s) => s.end > range.start + 0.5 && s.start < range.end - 0.5)
-    .map((s) => ({ id: s.id, label: s.label, from: Math.max(s.start, range.start), to: Math.min(s.end, range.end), kind: s.kind }));
-  // One part covering the whole video is the same thing as the whole video.
-  return parts.length > 1 ? [all, ...parts] : [all];
-}
-
-/** The stretch of song the next take covers: a part, or anywhere the artist taps on the song. */
+/**
+ * Where the next take starts and stops. The artist picks the start right before recording:
+ * tap the song, or listen and hit "Start here". The first take places the video in the song
+ * (a snippet runs about 30 seconds from there); later takes stay inside it.
+ */
 export function useTakeRange(p: Project | undefined) {
-  const [partId, setPartId] = useState('all');
   const [startAt, setStartAt] = useState<number | undefined>();
-  const parts = p ? takeParts(p) : [];
-  const part = parts.find((x) => x.id === partId) ?? parts[0];
-  const range = p ? videoRange(p) : { start: 0, end: 0 };
-  const custom = startAt !== undefined;
-  const from = custom ? startAt : (part?.from ?? 0);
-  const to = custom ? range.end : (part?.to ?? 0);
+  const song = p?.song;
+  const placing = !!p && !!song && !!p.length && p.takes.length === 0;
+  const bounds = !p || !song ? { start: 0, end: 0 } : placing ? { start: 0, end: song.durationSec } : videoRange(p);
+  const latest = Math.max(bounds.start, bounds.end - 2);
+  const from = Math.round(Math.max(bounds.start, Math.min(latest, startAt ?? bounds.start)) * 1000) / 1000;
+  const to = placing && p?.length && song ? (rangeFor(song, from, p.length)?.end ?? song.durationSec) : bounds.end;
+
+  const startFrom = (t: number) => {
+    if (!p?.song) return;
+    const clamped = Math.max(bounds.start, Math.min(latest, onBeat(p, t)));
+    setStartAt(Math.round(clamped * 1000) / 1000);
+  };
+
   return {
-    parts,
-    partId: custom ? 'custom' : (part?.id ?? 'all'),
+    /** True until the first take: where it starts is where the video starts. */
+    placing,
+    /** The stretch of song the strip shows and the artist can start in. */
+    bounds,
     from,
     to,
-    hookOnly: !custom && part?.kind === 'hook',
-    pick: (id: string) => {
-      setPartId(id);
-      setStartAt(undefined);
-    },
-    /** Start the take at song time `t`, on the beat, running to the end of the video. */
-    startFrom: (t: number) => {
-      const song = p?.song;
-      if (!song) return;
-      const beat = 60 / song.bpm;
-      const snapped = song.downbeatSec + Math.round((t - song.downbeatSec) / beat) * beat;
-      const clamped = Math.max(range.start, Math.min(range.end - 2, snapped));
-      setStartAt(Math.round(clamped * 1000) / 1000);
-    },
+    /** The artist moved the start away from the top. */
+    custom: startAt !== undefined && from > bounds.start + 0.05,
+    /** Back to the top of the song, or of the video once it's placed. */
+    fromTop: () => setStartAt(undefined),
+    /** Start the take at song time `t`, on the beat. */
+    startFrom,
+    /** "Start here" while the song plays. A tap lands a moment after the spot the artist heard, so it backs off first. */
+    startHere: (t: number) => startFrom(t - 0.25),
   };
 }

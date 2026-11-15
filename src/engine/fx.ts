@@ -158,12 +158,13 @@ export function buildCues(song: Song, fx: FxPlan): FxCue[] {
     const section = sectionAt(song.sections, t);
     if (!section) continue;
     const hook = section.kind === 'hook';
-    const quiet = section.kind === 'intro' || section.kind === 'outro';
-    if (!hook && (!everywhere || quiet)) continue;
+    const quiet = !section.scene && (section.kind === 'intro' || section.kind === 'outro');
+    // Scenes carry the video on their own, so they get the effects a hook would, a touch lighter.
+    if (!hook && !section.scene && (!everywhere || quiet)) continue;
     const inBar = b % 4;
     const bar = Math.floor(b / 4);
     const snare = halfTime ? inBar === 2 : inBar === 1 || inBar === 3;
-    const weight = hook ? 1 : 0.7;
+    const weight = hook ? 1 : section.scene ? 0.85 : 0.7;
 
     if (snare) {
       add(t, beat * 0.9, 'punchIn', level * weight);

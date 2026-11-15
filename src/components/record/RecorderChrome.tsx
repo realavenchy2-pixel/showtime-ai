@@ -9,7 +9,6 @@ import { Pause, Play, RefreshCcw, X } from '@/components/icons';
 import { formatTime } from '@/engine/director';
 import { barSec } from '@/engine/samples';
 import type { LyricLine, PlannedTake, Section, Song, Take } from '@/engine/types';
-import type { TakePart } from '@/lib/takeRange';
 import { color, gutter, maxWidth, radius, space } from '@/theme/tokens';
 
 import { Frame } from '../Frame';
@@ -31,17 +30,24 @@ interface Props {
   to: number;
   takes: Take[];
   planned?: PlannedTake;
-  /** The whole video and each part of it, to pick what this take covers. */
-  parts: TakePart[];
-  /** The picked part, or `custom` when the artist tapped a start point on the song. */
-  partId: string;
+  /** The first take: where it starts is where the video starts. */
+  placing: boolean;
+  /** The take starts somewhere other than the top. */
+  custom: boolean;
+  /** Where the video sits in the song once it's placed. */
+  video?: { start: number; end: number };
   peaks?: number[];
   blocked?: { title: string; body: string };
-  /** The song is playing so the artist can hear where the take starts. */
+  /** The song is playing so the artist can hear where to start. */
   listening?: boolean;
-  onPart: (id: string) => void;
-  /** Tapped the song strip: start the take there. */
+  /** Back to the top of the song (or of the video). */
+  onFromTop: () => void;
+  /** Let go of the song strip: the take starts there. */
   onStartAt: (songTime: number) => void;
+  /** Sliding along the song strip: play from under the finger. */
+  onScrub?: (songTime: number) => void;
+  /** While listening: start the take where the song is now. */
+  onStartHere?: () => void;
   onListen?: () => void;
   onRecord: () => void;
   onStop: () => void;
@@ -82,17 +88,25 @@ function currentLines(lines: LyricLine[], t: number): { current?: LyricLine; nex
 
 /** Everything on top of the camera: the take, the count-in, the prompter, the song and the record button. */
 export function RecorderChrome(props: Props) {
-  const { phase, beat, song, songTime, from, to, takes, planned, parts, partId, peaks, blocked, listening, onPart, onStartAt, onListen, onRecord, onStop, onFlip, onClose, children } = props;
+  const { phase, beat, song, songTime, from, to, takes, planned, placing, custom, video, peaks, blocked, listening, onFromTop, onStartAt, onScrub, onStartHere, onListen, onRecord, onStop, onFlip, onClose, children } = props;
   const insets = useSafeAreaInsets();
   const [stripWidth, setStripWidth] = useState(0);
+  const [sliding, setSliding] = useState(false);
   const n = takes.length;
   const recording = phase === 'recording';
   const idle = phase === 'idle';
-  const t = (idle && !listening) || phase === 'opening' || phase === 'blocked' ? from : songTime;
-  const section = sectionAt(song.sections, Math.max(0, t));
+  const t = (idle && !listening && !sliding) || phase === 'opening' || phase === 'blocked' ? from : songTime;
+  const at = (x: number) => Math.max(0, Math.min(song.durationSec, (x / Math.max(1, stripWidth)) * song.durationSec));
+  const step = barSec(song.bpm);
+  // Scenes are the director's layout of a placed video; before that, or outside it, it's just bars of the song.
+  const found = sectionAt(song.sections, Math.max(0, t));
+  const section = !placing && found?.scene ? found : undefined;
   const bar = barSec(song.bpm);
-  const barInSection = section ? Math.floor(Math.max(0, t - section.start) / bar) + 1 : 1;
-  const barsInSection = section ? Math.max(1, Math.round((section.end - section.start) / bar)) : 1;
+  const shown = section ?? found;
+  const barInSection = shown ? Math.floor(Math.max(0, t - shown.start) / bar) + 1 : 1;
+  const barsInSection = shown ? Math.max(1, Math.round((shown.end - shown.start) / bar)) : 1;
+  const songBar = Math.max(1, Math.floor((t - song.downbeatSec) / bar) + 1);
+  const where = section ? `${section.label}, bar ${Math.min(barInSection, barsInSection)} of ${barsInSection}` : found && !found.scene && found.kind !== 'intro' && found.kind !== 'outro' ? `${found.label}, bar ${Math.min(barInSection, barsInSection)} of ${barsInSection}` : `Bar ${songBar} of the song`;
   const lyric = currentLines(song.lyrics, t);
   const progress = to > from ? Math.max(0, Math.min(1, (t - from) / (to - from))) : 0;
   const pct = (x: number) => `${Math.max(0, Math.min(100, (x / song.durationSec) * 100))}%` as const;
@@ -176,7 +190,7 @@ export function RecorderChrome(props: Props) {
         <View style={styles.column}>
           <View style={styles.prompter} accessibilityLabel="Prompter">
             <T v="micro" c="smoke">
-              {section ? `${section.label}, bar ${Math.min(barInSection, barsInSection)} of ${barsInSection}` : ''}
+              {where}
             </T>
             {lyric.current ? (
               <T v="heading" style={styles.lyric}>
@@ -188,7 +202,7 @@ export function RecorderChrome(props: Props) {
               </T>
             ) : (
               <T v="heading" c="smoke" style={styles.lyric}>
-                {song.lyrics.length ? 'Instrumental' : section?.kind === 'hook' ? 'Give the hook everything' : 'Perform it like the room is full'}
+                {song.lyrics.length ? 'Instrumental' : found?.kind === 'hook' ? 'Give the hook everything' : 'Perform it like the room is full'}
               </T>
             )}
             {lyric.next ? (
@@ -198,29 +212,55 @@ export function RecorderChrome(props: Props) {
             ) : null}
           </View>
 
+          {idle && placing ? (
+            <View style={styles.ask}>
+              <T v="label">Where do you start?</T>
+              <T v="caption" c="smoke">
+                {listening || sliding ? 'Slide to move through the song. Let go, or hit Start here, where you want to come in.' : 'Slide along the song while it plays and let go where you come in. The video starts there.'}
+              </T>
+            </View>
+          ) : null}
+
           <View style={styles.songRow}>
+            {/* A scrubber: press and slide and the song plays from under your finger; where you let go is the start. */}
             <View
-              style={styles.strip}
+              style={[styles.strip, idle && styles.stripLive]}
               onLayout={(e) => setStripWidth(e.nativeEvent.layout.width)}
               onStartShouldSetResponder={() => idle}
-              onResponderGrant={(e) => onStartAt((e.nativeEvent.locationX / Math.max(1, stripWidth)) * song.durationSec)}
+              onMoveShouldSetResponder={() => idle}
+              onResponderTerminationRequest={() => false}
+              onResponderGrant={(e) => {
+                setSliding(true);
+                onScrub?.(at(e.nativeEvent.locationX));
+              }}
+              onResponderMove={(e) => onScrub?.(at(e.nativeEvent.locationX))}
+              onResponderRelease={(e) => {
+                setSliding(false);
+                onStartAt(at(e.nativeEvent.locationX));
+              }}
+              onResponderTerminate={() => setSliding(false)}
               accessibilityRole="adjustable"
-              accessibilityLabel={`Take starts at ${formatTime(from)}. Tap the song to start somewhere else.`}>
-              {song.sections.map((s) => (
-                <View key={s.id} style={[styles.stripSection, { left: pct(s.start), width: pct(s.end - s.start) }, s.kind === 'hook' && styles.stripHook]} />
-              ))}
-              {peaks?.length ? (
-                <View style={StyleSheet.absoluteFill}>
-                  <Svg width="100%" height="100%" viewBox="0 0 1000 28" preserveAspectRatio="none">
-                    <Path d={wavePath(peaks, 28)} fill={color.chalk} opacity={0.5} />
-                  </Svg>
-                </View>
-              ) : null}
-              <View style={[styles.stripRange, { left: pct(from), width: pct(to - from) }]} />
-              <View style={[styles.stripPlayed, { left: pct(from), width: pct(Math.max(0, t - from)) }]} />
-              <View style={[styles.stripHead, { left: pct(t) }]} />
+              accessibilityLabel={`Take starts at ${formatTime(from)}. Slide along the song to hear it and let go where you come in.`}
+              accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+              onAccessibilityAction={(e) => onStartAt(from + (e.nativeEvent.actionName === 'increment' ? step : -step))}>
+              <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                {video ? <View style={[styles.stripVideo, { left: pct(video.start), width: pct(video.end - video.start) }]} /> : null}
+                {placing ? null : song.sections.filter((s) => s.scene).map((s) => <View key={s.id} style={[styles.stripSection, { left: pct(s.start), width: pct(s.end - s.start) }]} />)}
+                {peaks?.length ? (
+                  <View style={StyleSheet.absoluteFill}>
+                    <Svg width="100%" height="100%" viewBox="0 0 1000 28" preserveAspectRatio="none">
+                      <Path d={wavePath(peaks, 28)} fill={color.chalk} opacity={0.5} />
+                    </Svg>
+                  </View>
+                ) : null}
+                <View style={[styles.stripRange, { left: pct(from), width: pct(to - from) }]} />
+                <View style={[styles.stripPlayed, !recording && styles.stripHeard, { left: pct(Math.min(from, t)), width: pct(Math.abs(t - from)) }]} />
+                <View style={[styles.stripStart, { left: pct(from) }]} />
+                <View style={[styles.stripHead, { left: pct(t) }]} />
+              </View>
             </View>
-            <T v="micro" c="smoke" style={styles.tabular}>{`${formatTime(t)} / ${formatTime(to)}`}</T>
+            {/* Picking the first start, the whole song is in play; after that, the take runs to the end of the video. */}
+            <T v="micro" c="smoke" style={styles.tabular}>{`${formatTime(t)} / ${formatTime(placing && idle ? song.durationSec : to)}`}</T>
           </View>
 
           {idle ? (
@@ -233,22 +273,24 @@ export function RecorderChrome(props: Props) {
                   </T>
                 </Press>
               ) : null}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scopes} accessibilityRole="radiogroup" accessibilityLabel="What this take covers">
-                {partId === 'custom' ? (
-                  <View style={[styles.scope, styles.scopeOn]}>
+              {listening && onStartHere ? (
+                <Press onPress={onStartHere} style={[styles.scope, styles.startHere]} accessibilityLabel={`Start here, at ${formatTime(songTime)}`}>
+                  <T v="caption" c="ink">
+                    Start here
+                  </T>
+                </Press>
+              ) : null}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scopes} accessibilityRole="radiogroup" accessibilityLabel="Where this take starts">
+                <Press onPress={onFromTop} style={[styles.scope, !custom && styles.scopeOn]} accessibilityRole="radio" accessibilityState={{ selected: !custom }} accessibilityLabel={placing ? 'Start from the top of the song' : `Start from the top of the video, ${formatTime(video?.start ?? 0)}`}>
+                  <T v="caption" style={{ color: !custom ? color.stage : color.chalk }}>
+                    From the top
+                  </T>
+                </Press>
+                {custom ? (
+                  <View style={[styles.scope, styles.scopeOn]} accessibilityRole="radio" accessibilityState={{ selected: true }}>
                     <T v="caption" style={{ color: color.stage }}>{`From ${formatTime(from)}`}</T>
                   </View>
                 ) : null}
-                {parts.map((part) => {
-                  const on = partId === part.id;
-                  return (
-                    <Press key={part.id} onPress={() => onPart(part.id)} style={[styles.scope, on && styles.scopeOn]} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={`${part.label}, ${formatTime(part.from)} to ${formatTime(part.to)}`}>
-                      <T v="caption" style={{ color: on ? color.stage : color.chalk }}>
-                        {part.label}
-                      </T>
-                    </Press>
-                  );
-                })}
               </ScrollView>
             </View>
           ) : null}
@@ -419,6 +461,19 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: 'rgba(242,240,236,0.08)',
   },
+  stripLive: {
+    // Taller while picking, so a thumb can slide it.
+    height: 44,
+  },
+  stripStart: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 4,
+    marginLeft: -2,
+    borderRadius: 2,
+    backgroundColor: color.chalk,
+  },
   stripSection: {
     position: 'absolute',
     top: 0,
@@ -426,8 +481,18 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderRightColor: 'rgba(0,0,0,0.6)',
   },
-  stripHook: {
-    backgroundColor: 'rgba(242,240,236,0.14)',
+  stripVideo: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(242,240,236,0.1)',
+  },
+  ask: {
+    gap: 2,
+  },
+  startHere: {
+    backgroundColor: color.accent,
+    borderColor: color.accent,
   },
   stripRange: {
     position: 'absolute',
@@ -442,6 +507,10 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     backgroundColor: 'rgba(255,69,58,0.35)',
+  },
+  stripHeard: {
+    // REC red is for recording only; listening shows in chalk.
+    backgroundColor: 'rgba(242,240,236,0.22)',
   },
   stripHead: {
     position: 'absolute',

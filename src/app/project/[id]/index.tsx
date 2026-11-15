@@ -49,6 +49,7 @@ export default function StudioScreen() {
   const redo = goingBack ? stagesToRedo(project, goingBack) : [];
   const stage = currentStage(project);
   const auto = project.autonomy === 'auto';
+  const planning = stage?.id === 'looks' && !project.planApproved && !thinking;
 
   const autopilot = (
     <Press
@@ -96,7 +97,8 @@ export default function StudioScreen() {
         }
         renderItem={({ item, index }) => <Line message={item} prev={messages[index + 1]} project={project} />}
       />
-      <Composer onSend={(text) => sendToDirector(project.id, text)} bottomInset={insets.bottom} />
+      {/* While the plan box is up it is the place to talk; one box to type in at a time. */}
+      {planning ? <View style={{ height: insets.bottom + space.s }} /> : <Composer onSend={(text) => sendToDirector(project.id, text)} bottomInset={insets.bottom} />}
     </>
   );
 
@@ -116,8 +118,8 @@ export default function StudioScreen() {
       ) : (
         <KeyboardAvoidingView style={styles.column} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           {header}
-          {/* The open checklist takes the video's place on a phone so every stage fits. */}
-          {expanded ? null : <View style={styles.pad}>{player}</View>}
+          {/* The open checklist, or the plan box, takes the video's place on a phone so it all fits. */}
+          {expanded || planning ? null : <View style={styles.pad}>{player}</View>}
           <View style={[styles.pad, styles.slateWrap]}>{slate}</View>
           {chat}
         </KeyboardAvoidingView>

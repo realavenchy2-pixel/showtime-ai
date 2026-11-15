@@ -210,7 +210,44 @@ export function suggestedLooks(sections: Section[]): Record<string, Look> {
     bridge: 'whiteVoid',
     outro: 'beach',
   };
-  return Object.fromEntries(sections.map((s) => [s.id, lookFor(pick[s.kind])]));
+  // Scenes take turns, so a video moves through worlds instead of sitting in one.
+  const rotation: LocationKind[] = ['alley', 'hangingMic', 'beach', 'darkVoid', 'whiteVoid'];
+  let scene = 0;
+  return Object.fromEntries(sections.map((s) => [s.id, lookFor(s.scene ? rotation[scene++ % rotation.length] : pick[s.kind])]));
+}
+
+/** About how long a scene runs before the video moves to its next look. */
+export const SCENE_SEC = 20;
+
+/**
+ * Lays the video out in scenes by time, on whole bars: no verse or hook needed.
+ * `range` is where recording starts and stops; song outside it is kept as unused "Before" and "After".
+ */
+export function scenesFor(song: Song, range?: { start: number; end: number }): Section[] {
+  const duration = song.durationSec;
+  const start = Math.max(0, Math.min(range?.start ?? 0, duration));
+  const end = Math.max(start, Math.min(range?.end ?? duration, duration));
+  const bar = barSec(song.bpm);
+  const totalBars = Math.max(1, Math.round((end - start) / bar));
+  const count = Math.max(1, Math.round((end - start) / SCENE_SEC));
+  const perScene = Math.max(1, Math.ceil(totalBars / count));
+  const out: Section[] = [];
+  if (start > 0.05) out.push({ id: 'before', kind: 'intro', label: 'Before', start: 0, end: round(start) });
+  let t = start;
+  let n = 0;
+  while (t < end - 0.05) {
+    let e = Math.min(end, t + perScene * bar);
+    if (end - e < bar * 0.5) e = end;
+    n += 1;
+    out.push({ id: `scene-${n}`, kind: 'verse', label: `Scene ${n}`, start: round(t), end: round(e), scene: true });
+    t = e;
+  }
+  if (end < duration - 0.05) out.push({ id: 'after', kind: 'outro', label: 'After', start: round(end), end: round(duration) });
+  return out;
+}
+
+export function withScenes(song: Song, range?: { start: number; end: number }): Song {
+  return { ...song, sections: scenesFor(song, range) };
 }
 
 const BROLL_BY_VIBE: Record<Vibe, string[]> = {

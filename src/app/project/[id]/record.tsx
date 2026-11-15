@@ -37,7 +37,7 @@ export default function RecordScreen() {
   const access = useCameraAccess();
   const camera = useRef<CameraView | null>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const take = useRef<{ rolledAt: number; playedAt: number; from: number; hookOnly: boolean } | null>(null);
+  const take = useRef<{ rolledAt: number; playedAt: number; from: number } | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [phase, setPhase] = useState<RecorderPhase>('opening');
   const [beat, setBeat] = useState(4);
@@ -48,7 +48,8 @@ export default function RecordScreen() {
 
   const song = project?.song;
   const range = useTakeRange(project);
-  const { from, to, hookOnly } = range;
+  const { from, to } = range;
+  const listenUntil = range.bounds.end;
   const n = project?.takes.length ?? 0;
 
   useEffect(() => {
@@ -102,7 +103,7 @@ export default function RecordScreen() {
   const onListenTick = useEffectEvent(() => {
     const t = player.currentTime;
     setSongTime(t);
-    if (!player.playing || t >= to - 0.05) {
+    if (!player.playing || t >= listenUntil - 0.05) {
       player.pause();
       setListening(false);
     }
@@ -117,6 +118,23 @@ export default function RecordScreen() {
     player.pause();
     setListening(false);
   };
+  // Sliding along the song: it plays from under the finger and keeps playing after.
+  const lastSeek = useRef(0);
+  const scrub = (t: number) => {
+    if (phase !== 'idle') return;
+    const at = Math.max(range.bounds.start, Math.min(listenUntil - 0.5, t));
+    setSongTime(at);
+    const now = Date.now();
+    if (now - lastSeek.current > 80) {
+      lastSeek.current = now;
+      void player.seekTo(at).catch(() => {});
+    }
+    if (!listening) {
+      player.play();
+      setListening(true);
+    }
+  };
+
   const listen = async () => {
     if (phase !== 'idle') return;
     if (listening) return stopListening();
@@ -163,7 +181,7 @@ export default function RecordScreen() {
             sync: 'clock',
           },
           current.from,
-          current.hookOnly,
+          false,
         ),
       );
       haptic.success();
@@ -197,7 +215,7 @@ export default function RecordScreen() {
       setTimeout(() => {
         const cam = camera.current;
         if (!cam) return;
-        take.current = { rolledAt: Date.now(), playedAt: Date.now(), from, hookOnly };
+        take.current = { rolledAt: Date.now(), playedAt: Date.now(), from };
         cam.recordAsync().then(
           (video) => void save(video?.uri),
           () => void save(undefined),
@@ -224,19 +242,29 @@ export default function RecordScreen() {
       to={to}
       takes={project.takes}
       planned={project.takePlan[n]}
-      parts={range.parts}
-      partId={range.partId}
+      placing={range.placing}
+      custom={range.custom}
+      video={range.placing ? undefined : range.bounds}
       peaks={song.peaks}
       blocked={phase === 'blocked' ? DENIED : undefined}
       listening={listening}
       onListen={() => void listen()}
-      onPart={(id) => {
+      onFromTop={() => {
         stopListening();
-        range.pick(id);
+        range.fromTop();
       }}
+      onScrub={scrub}
       onStartAt={(t) => {
-        stopListening();
+        // Let go: that's the start. The song keeps playing from there so you hear it.
+        if (listening) void player.seekTo(Math.max(range.bounds.start, Math.min(listenUntil - 0.5, t))).catch(() => {});
         range.startFrom(t);
+        haptic.select();
+      }}
+      onStartHere={() => {
+        const t = player.currentTime;
+        stopListening();
+        range.startHere(t);
+        haptic.select();
       }}
       onRecord={() => void record()}
       onStop={stop}

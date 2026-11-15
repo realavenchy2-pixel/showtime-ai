@@ -1,17 +1,17 @@
 import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Check, Monitor, Music, Smartphone, Upload, type LucideIcon } from '@/components/icons';
+import { Check, Monitor, Music, Pause, Play, Smartphone, Upload, type LucideIcon } from '@/components/icons';
 import { formatTime } from '@/engine/director';
-import { DEMO_TRACKS, demoDuration, songFromDemo, songFromImport } from '@/engine/samples';
+import { DEMO_TRACKS, demoDuration, songFromDemo, songFromImport, withScenes } from '@/engine/samples';
 import type { Format, Song } from '@/engine/types';
 import { haptic } from '@/lib/haptics';
 import { pickSong } from '@/media/pick';
+import { useSongPreview } from '@/media/preview';
 import { color, radius, space } from '@/theme/tokens';
 
 import { Press } from './Press';
 import { SectionTitle } from './Screen';
-import { SongMap, wholeSong } from './SongMap';
 import { StageGlyph } from './StageGlyph';
 import { T } from './T';
 import { showToast } from './Toast';
@@ -21,7 +21,7 @@ export interface SongChoice {
   formats: Format[];
 }
 
-/** Stage 1: the track, its parts, and where the video gets posted. */
+/** Stage 1: the track and where the video gets posted. The video is laid out in scenes by time, not by verse and hook. */
 export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v: SongChoice) => void }) {
   const [busy, setBusy] = useState(false);
   const [needsTempo, setNeedsTempo] = useState(false);
@@ -46,8 +46,8 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
       }
       const unsure = picked.bpm <= 0 || picked.confidence < 0.2;
       const bpm = picked.bpm > 0 ? picked.bpm : 120;
-      // The artist marks the parts; every song is built different.
-      onChange({ ...value, song: songFromImport({ ...picked, bpm, sections: wholeSong(picked.durationSec) }, true) });
+      // No guessing at verses and hooks: the director lays the video out in scenes on the beat.
+      onChange({ ...value, song: withScenes(songFromImport({ ...picked, bpm, sections: [] }, true)) });
       setNeedsTempo(unsure);
       haptic.success();
     } catch {
@@ -59,7 +59,7 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
 
   const setTempo = (bpm: number) => {
     if (!imported) return;
-    onChange({ ...value, song: { ...imported, bpm } });
+    onChange({ ...value, song: withScenes({ ...imported, bpm }) });
     setNeedsTempo(false);
   };
 
@@ -91,7 +91,7 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
               onPress={() => {
                 haptic.select();
                 setNeedsTempo(false);
-                onChange({ ...value, song: songFromDemo(t, true) });
+                onChange({ ...value, song: withScenes(songFromDemo(t, true)) });
               }}
               scaleTo={0.99}
               style={[styles.option, selected && styles.selected]}
@@ -110,22 +110,19 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
       </View>
 
       {song ? (
-        <View style={styles.block}>
-          <SectionTitle detail="Play it and mark where each part starts. You know your song; I cut to it.">Your song’s parts</SectionTitle>
-          <View style={styles.mapped}>
-            <SongMap song={song} onChange={(sections) => onChange({ ...value, song: { ...song, sections } })} />
-            {imported ? (
-              needsTempo ? (
-                <TapTempo onDone={setTempo} />
-              ) : (
-                <Press onPress={() => setNeedsTempo(true)} style={styles.link} accessibilityLabel="Tempo looks wrong, tap it in">
-                  <T v="caption" c="smoke">
-                    {`${Math.round(imported.bpm)} BPM. Off? Tap it in`}
-                  </T>
-                </Press>
-              )
-            ) : null}
-          </View>
+        <View style={styles.mapped}>
+          <Listen song={song} />
+          {imported ? (
+            needsTempo ? (
+              <TapTempo onDone={setTempo} />
+            ) : (
+              <Press onPress={() => setNeedsTempo(true)} style={styles.link} accessibilityLabel="Tempo looks wrong, tap it in">
+                <T v="caption" c="smoke">
+                  {`${Math.round(imported.bpm)} BPM. Off? Play it and tap it in`}
+                </T>
+              </Press>
+            )
+          ) : null}
         </View>
       ) : null}
 
@@ -135,6 +132,32 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
           <FormatCard icon={Monitor} title="YouTube" detail="16:9" selected={value.formats.includes('16:9')} onPress={() => toggleFormat('16:9')} />
           <FormatCard icon={Smartphone} title="Reels and TikTok" detail="9:16" selected={value.formats.includes('9:16')} onPress={() => toggleFormat('9:16')} />
         </View>
+      </View>
+    </View>
+  );
+}
+
+/** Play the track before going on. Where the video starts is picked right before the first take. */
+function Listen({ song }: { song: Song }) {
+  const preview = useSongPreview(song);
+  const duration = Math.max(0.001, song.durationSec);
+  const toggle = () => {
+    haptic.select();
+    if (preview.playing) preview.pause();
+    else preview.play(preview.time >= duration - 0.2 ? 0 : undefined);
+  };
+  return (
+    <View style={styles.listen}>
+      <Press onPress={toggle} disabled={!preview.ready} style={[styles.play, !preview.ready && styles.playOff]} accessibilityLabel={preview.playing ? 'Pause the song' : 'Play the song'}>
+        {preview.playing ? <Pause size={18} color={color.stage} /> : <Play size={18} color={color.stage} />}
+      </Press>
+      <View style={styles.flex}>
+        <View style={styles.track}>
+          <View style={[styles.trackFill, { width: `${Math.min(100, (preview.time / duration) * 100)}%` }]} />
+        </View>
+        <T v="caption" c="smoke" style={styles.tabular}>
+          {`${formatTime(preview.time)} / ${formatTime(duration)}`}
+        </T>
       </View>
     </View>
   );
@@ -238,23 +261,34 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.hairline,
   },
-  wave: {
-    height: 44,
-  },
-  sections: {
+  listen: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
+    alignItems: 'center',
+    gap: space.m,
   },
-  section: {
-    minHeight: 44,
-    paddingHorizontal: space.m,
+  play: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: color.chalk,
+    alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.s,
-    backgroundColor: color.flat,
   },
-  sectionHook: {
-    backgroundColor: color.rig,
+  playOff: {
+    opacity: 0.4,
+  },
+  track: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: color.flat,
+    overflow: 'hidden',
+  },
+  trackFill: {
+    height: 4,
+    backgroundColor: color.chalk,
+  },
+  tabular: {
+    fontVariant: ['tabular-nums'],
   },
   link: {
     minHeight: 32,
@@ -277,23 +311,6 @@ const styles = StyleSheet.create({
   },
   selected: {
     borderStyle: 'solid',
-    borderColor: color.chalk,
-  },
-  chips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: space.s,
-  },
-  chip: {
-    minHeight: 44,
-    paddingHorizontal: space.l,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: color.hairlineStrong,
-    justifyContent: 'center',
-  },
-  chipOn: {
-    backgroundColor: color.chalk,
     borderColor: color.chalk,
   },
   formats: {

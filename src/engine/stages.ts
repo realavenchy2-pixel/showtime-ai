@@ -12,9 +12,9 @@ export interface StageDef {
 }
 
 export const STAGES: StageDef[] = [
-  { id: 'song', n: 1, title: 'Song', optional: false, owner: 'artist', summary: 'Bring the track and mark its parts' },
-  { id: 'looks', n: 2, title: 'Plan', optional: false, owner: 'artist', summary: 'Where each part takes place, b-roll and effects' },
-  { id: 'shoot', n: 3, title: 'Shoot', optional: false, owner: 'artist', summary: 'Record with the song playing, or upload your clips' },
+  { id: 'song', n: 1, title: 'Song', optional: false, owner: 'artist', summary: 'Bring the track and pick where it posts' },
+  { id: 'looks', n: 2, title: 'Plan', optional: false, owner: 'artist', summary: 'Describe the video; the director plans every scene' },
+  { id: 'shoot', n: 3, title: 'Shoot', optional: false, owner: 'artist', summary: 'Pick where you start and record with the song playing, or upload clips' },
   { id: 'cut', n: 4, title: 'Cut', optional: false, owner: 'director', summary: 'Takes sorted and cut on the beat' },
   { id: 'switch', n: 5, title: 'Switch', optional: false, owner: 'director', summary: 'Every shot moved into its new world' },
   { id: 'broll', n: 6, title: 'B-roll', optional: true, owner: 'director', summary: 'Cutaways that match your lyrics' },

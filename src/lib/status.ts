@@ -39,7 +39,7 @@ function nextLine(p: Project, stage: StageId): string {
     case 'cut':
       return 'The cut is next';
     case 'looks':
-      return p.range ? `${Math.round(p.range.end - p.range.start)}-second snippet. Lock the plan` : 'Full song. Lock the plan to shoot';
+      return (p.length ?? (p.range ? 'snippet' : 'full')) === 'snippet' ? 'Snippet. Describe it and lock the plan' : 'Full video. Describe it and lock the plan';
     case 'switch':
       return 'Ready to switch';
     case 'broll':

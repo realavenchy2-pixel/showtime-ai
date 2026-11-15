@@ -1,4 +1,4 @@
-import { coverage } from './actions';
+import { coverage, videoLength, videoRange } from './actions';
 import { estimateBudget } from './agent';
 import { nextActions } from './director';
 import { currentStage, stageStatus } from './stages';
@@ -18,6 +18,8 @@ export function summarize(p: Project): Record<string, unknown> {
     title: p.title,
     vibe: p.vibe,
     formats: p.formats,
+    video: p.song ? { length: videoLength(p), from: Math.round(videoRange(p).start), to: Math.round(videoRange(p).end), placed: p.takes.length > 0 || !p.length } : undefined,
+    brief: p.brief,
     autonomy: p.autonomy,
     pipeline: p.pipeline,
     stage: stage ? { id: stage.id, status: stageStatus(p, stage.id), next: nextActions(p).primary?.label } : { id: 'wrapped' },
@@ -28,7 +30,8 @@ export function summarize(p: Project): Record<string, unknown> {
           bpm: p.song.bpm,
           seconds: Math.round(p.song.durationSec),
           hasLyrics: p.song.lyrics.length > 0,
-          sections: sections.map((s) => ({ id: s.id, label: s.label, kind: s.kind, start: Math.round(s.start), end: Math.round(s.end) })),
+          // Scenes are the plan's units; "Before" and "After" are song outside the video.
+          sections: sections.map((s) => ({ id: s.id, label: s.label, kind: s.scene ? 'scene' : s.kind, start: Math.round(s.start), end: Math.round(s.end) })),
         }
       : undefined,
     takes: p.takes.map((t) => ({ n: t.n, label: t.label, angle: t.angle, from: Math.round(t.start), to: Math.round(t.end), source: t.source, linedUpBy: t.sync, note: t.flag })),
