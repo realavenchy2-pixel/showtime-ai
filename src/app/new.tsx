@@ -22,13 +22,13 @@ export default function NewVideoScreen() {
             disabled={!ready}
             onPress={() => {
               if (!songChoiceReady(choice)) return;
-              const id = createProject({ song: choice.song, vibe: choice.vibe, formats: choice.formats });
+              const id = createProject({ song: choice.song, formats: choice.formats });
               router.replace(`/project/${id}`);
             }}
           />
           {!ready ? (
             <T v="caption" c="ash" style={{ textAlign: 'center' }}>
-              Pick a song, a vibe and at least one format.
+              Pick a song and at least one format.
             </T>
           ) : null}
         </>

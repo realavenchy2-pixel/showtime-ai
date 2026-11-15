@@ -39,7 +39,7 @@ function nextLine(p: Project, stage: StageId): string {
     case 'cut':
       return 'The cut is next';
     case 'looks':
-      return 'Reference frames are next';
+      return p.range ? `${Math.round(p.range.end - p.range.start)}-second snippet. Lock the plan` : 'Full song. Lock the plan to shoot';
     case 'switch':
       return 'Ready to switch';
     case 'broll':
@@ -56,7 +56,7 @@ function reviewLine(p: Project, stage: StageId): string {
     case 'cut':
       return 'Your cut is ready';
     case 'looks':
-      return p.planApproved ? 'References are ready' : 'The plan is ready for you';
+      return 'The plan is ready for you';
     case 'switch': {
       const flagged = p.shots.filter((s) => s.flag || s.status === 'failed').length;
       return flagged ? `${flagged} ${flagged === 1 ? 'shot needs' : 'shots need'} a look` : `${p.shots.length} shots ready to review`;

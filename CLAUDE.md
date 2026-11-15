@@ -2,7 +2,7 @@
 
 # Showtime AI
 
-A music video agent. The artist records with the song playing (or uploads clips) and the director runs eight stages to an exported video: song, shoot, cut, looks, switch, b-roll, edit, export. Recording, the cut, effects and export are real on the web app. The switch, b-roll and Claude go live through the studio server in `server/`; without one they are simulated in `src/engine`. Read `docs/BUILD_NOTES.md` first and keep its checklist current.
+A music video agent. The artist records with the song playing (or uploads clips) and the director runs eight stages to an exported video: song, plan (stage id `looks`), shoot, cut, switch, b-roll, edit, export. The artist marks the song's parts and locks the plan (full song or a 15/30/60-second snippet) before recording. Recording, the cut, effects and export are real on the web app. The switch, b-roll and Claude go live through the studio server in `server/`; without one they are simulated in `src/engine`. Read `docs/BUILD_NOTES.md` first and keep its checklist current.
 
 ## Before you call a task done
 

@@ -12,10 +12,10 @@ export interface StageDef {
 }
 
 export const STAGES: StageDef[] = [
-  { id: 'song', n: 1, title: 'Song', optional: false, owner: 'artist', summary: 'Bring the track, pick a vibe and where it posts' },
-  { id: 'shoot', n: 2, title: 'Shoot', optional: false, owner: 'artist', summary: 'Record with the song playing, or upload your clips' },
-  { id: 'cut', n: 3, title: 'Cut', optional: false, owner: 'director', summary: 'Takes sorted and cut on the beat' },
-  { id: 'looks', n: 4, title: 'Looks', optional: false, owner: 'artist', summary: 'Where each part of the song takes place' },
+  { id: 'song', n: 1, title: 'Song', optional: false, owner: 'artist', summary: 'Bring the track and mark its parts' },
+  { id: 'looks', n: 2, title: 'Plan', optional: false, owner: 'artist', summary: 'Where each part takes place, b-roll and effects' },
+  { id: 'shoot', n: 3, title: 'Shoot', optional: false, owner: 'artist', summary: 'Record with the song playing, or upload your clips' },
+  { id: 'cut', n: 4, title: 'Cut', optional: false, owner: 'director', summary: 'Takes sorted and cut on the beat' },
   { id: 'switch', n: 5, title: 'Switch', optional: false, owner: 'director', summary: 'Every shot moved into its new world' },
   { id: 'broll', n: 6, title: 'B-roll', optional: true, owner: 'director', summary: 'Cutaways that match your lyrics' },
   { id: 'edit', n: 7, title: 'Edit', optional: false, owner: 'director', summary: 'Everything stitched to the song with effects on the beat' },
@@ -34,14 +34,14 @@ export function stageDef(id: StageId): StageDef {
 export function isStageDone(p: Project, id: StageId): boolean {
   switch (id) {
     case 'song':
-      return !!p.song?.analyzed && !!p.vibe && p.formats.length > 0;
+      return !!p.song?.analyzed && p.formats.length > 0;
     case 'shoot':
       return p.takes.length > 0 && p.shootLocked;
     case 'cut':
       return p.cut.segments.length > 0 && p.cut.locked;
     case 'looks': {
       const sections = p.song?.sections ?? [];
-      return sections.length > 0 && sections.every((s) => !!p.looks[s.id]) && p.plates === 'approved';
+      return sections.length > 0 && sections.every((s) => !!p.looks[s.id]) && p.planApproved;
     }
     case 'switch':
       return p.shots.length > 0 && p.shots.every((s) => s.status === 'approved');
@@ -68,8 +68,6 @@ export function needsReview(p: Project, id: StageId): boolean {
   switch (id) {
     case 'cut':
       return p.cut.segments.length > 0 && !p.cut.locked;
-    case 'looks':
-      return !p.planApproved || p.plates === 'ready';
     case 'switch':
       return p.shots.length > 0 && p.shots.every((s) => s.status === 'ready' || s.status === 'approved' || s.status === 'failed');
     case 'broll':
@@ -86,7 +84,8 @@ export function stageStatus(p: Project, id: StageId): StageStatus {
   if (isStageDone(p, id)) return 'done';
   const current = currentStage(p);
   if (!current || current.id !== id) return 'locked';
-  if (p.job && p.job.stage === id) return 'working';
+  // Reference frames are built at the start of the switch, under the plan's job id.
+  if (p.job && (p.job.stage === id || (id === 'switch' && p.job.stage === 'looks'))) return 'working';
   if (needsReview(p, id)) return 'needs_you';
   return 'current';
 }

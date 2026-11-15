@@ -22,7 +22,7 @@ export const TUTORIAL_LOOK: Partial<Record<StageId, LocationKind>> = {
 };
 
 export const TUTORIAL_STEPS: Record<StageId, string[]> = {
-  song: ['Upload your master track, or try a demo beat.', 'Check the tempo and sections the director found.', 'Pick the vibe and where it posts: YouTube, Reels, or both.'],
+  song: ['Upload your master track, or try a demo beat.', 'Play it and tap New part here where the hook comes in. Tap a part to say what it is.', 'Pick where it posts: YouTube, Reels, or both.'],
   shoot: [
     'Light on your face, phone steady. The song plays while you record.',
     'One full pass is enough. Every extra take is another angle to cut to.',
@@ -30,9 +30,9 @@ export const TUTORIAL_STEPS: Record<StageId, string[]> = {
   ],
   cut: ['The director sorts your takes and cuts on the beat.', 'Shuffle for a different cut, or swap the take on any shot.', 'Nothing is rendered yet, so changing your mind is free.'],
   looks: [
-    'The director pitches a world for every section.',
-    'Change the look, write what happens in the scene, or add up to four reference images.',
-    'Hit Run it. From here the director works on its own.',
+    'Pick the full song or a 15, 30 or 60 second snippet, and where the snippet starts.',
+    'The director pitches a world for every part. Change the look, write what happens, or add reference images.',
+    'Lock the plan, then record. After the shoot the director works on its own.',
   ],
   switch: [
     'Every shot is moved into its world. You stay exactly as you performed.',

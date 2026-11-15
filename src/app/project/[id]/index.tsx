@@ -70,7 +70,7 @@ export default function StudioScreen() {
 
   const mode = project.pipeline === 'live' ? 'live renders' : 'demo renders';
   const header = (
-    <Header title={project.title} kicker={project.isSample ? 'Sample video' : project.vibe ? `${project.vibe} video, ${mode}` : undefined} fallback="/" right={autopilot} />
+    <Header title={project.title} kicker={project.isSample ? 'Sample video' : `${mode[0].toUpperCase()}${mode.slice(1)}`} fallback="/" right={autopilot} />
   );
   const player = <PlayerView project={project} label={versionLabel(project)} maxHeight={wide ? height - 220 : Math.round(height * 0.34)} />;
   const slate = <Slate project={project} expanded={expanded} onToggle={() => setExpanded((e) => !e)} onRevisit={setGoingBack} />;
@@ -116,7 +116,8 @@ export default function StudioScreen() {
       ) : (
         <KeyboardAvoidingView style={styles.column} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           {header}
-          <View style={styles.pad}>{player}</View>
+          {/* The open checklist takes the video's place on a phone so every stage fits. */}
+          {expanded ? null : <View style={styles.pad}>{player}</View>}
           <View style={[styles.pad, styles.slateWrap]}>{slate}</View>
           {chat}
         </KeyboardAvoidingView>

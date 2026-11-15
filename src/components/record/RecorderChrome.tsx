@@ -1,14 +1,15 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { type ReactNode, useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { type ReactNode, useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import { RefreshCcw, X } from '@/components/icons';
+import { Pause, Play, RefreshCcw, X } from '@/components/icons';
 import { formatTime } from '@/engine/director';
 import { barSec } from '@/engine/samples';
-import type { LyricLine, PlannedTake, Section, Song, Take, TakeScope } from '@/engine/types';
+import type { LyricLine, PlannedTake, Section, Song, Take } from '@/engine/types';
+import type { TakePart } from '@/lib/takeRange';
 import { color, gutter, maxWidth, radius, space } from '@/theme/tokens';
 
 import { Frame } from '../Frame';
@@ -30,11 +31,18 @@ interface Props {
   to: number;
   takes: Take[];
   planned?: PlannedTake;
-  scope: TakeScope;
-  hasHook: boolean;
+  /** The whole video and each part of it, to pick what this take covers. */
+  parts: TakePart[];
+  /** The picked part, or `custom` when the artist tapped a start point on the song. */
+  partId: string;
   peaks?: number[];
   blocked?: { title: string; body: string };
-  onScope: (scope: TakeScope) => void;
+  /** The song is playing so the artist can hear where the take starts. */
+  listening?: boolean;
+  onPart: (id: string) => void;
+  /** Tapped the song strip: start the take there. */
+  onStartAt: (songTime: number) => void;
+  onListen?: () => void;
   onRecord: () => void;
   onStop: () => void;
   onFlip?: () => void;
@@ -74,12 +82,13 @@ function currentLines(lines: LyricLine[], t: number): { current?: LyricLine; nex
 
 /** Everything on top of the camera: the take, the count-in, the prompter, the song and the record button. */
 export function RecorderChrome(props: Props) {
-  const { phase, beat, song, songTime, from, to, takes, planned, scope, hasHook, peaks, blocked, onScope, onRecord, onStop, onFlip, onClose, children } = props;
+  const { phase, beat, song, songTime, from, to, takes, planned, parts, partId, peaks, blocked, listening, onPart, onStartAt, onListen, onRecord, onStop, onFlip, onClose, children } = props;
   const insets = useSafeAreaInsets();
+  const [stripWidth, setStripWidth] = useState(0);
   const n = takes.length;
   const recording = phase === 'recording';
   const idle = phase === 'idle';
-  const t = idle || phase === 'opening' || phase === 'blocked' ? from : songTime;
+  const t = (idle && !listening) || phase === 'opening' || phase === 'blocked' ? from : songTime;
   const section = sectionAt(song.sections, Math.max(0, t));
   const bar = barSec(song.bpm);
   const barInSection = section ? Math.floor(Math.max(0, t - section.start) / bar) + 1 : 1;
@@ -190,7 +199,13 @@ export function RecorderChrome(props: Props) {
           </View>
 
           <View style={styles.songRow}>
-            <View style={styles.strip}>
+            <View
+              style={styles.strip}
+              onLayout={(e) => setStripWidth(e.nativeEvent.layout.width)}
+              onStartShouldSetResponder={() => idle}
+              onResponderGrant={(e) => onStartAt((e.nativeEvent.locationX / Math.max(1, stripWidth)) * song.durationSec)}
+              accessibilityRole="adjustable"
+              accessibilityLabel={`Take starts at ${formatTime(from)}. Tap the song to start somewhere else.`}>
               {song.sections.map((s) => (
                 <View key={s.id} style={[styles.stripSection, { left: pct(s.start), width: pct(s.end - s.start) }, s.kind === 'hook' && styles.stripHook]} />
               ))}
@@ -208,18 +223,33 @@ export function RecorderChrome(props: Props) {
             <T v="micro" c="smoke" style={styles.tabular}>{`${formatTime(t)} / ${formatTime(to)}`}</T>
           </View>
 
-          {idle && hasHook ? (
-            <View style={styles.scopes} accessibilityRole="radiogroup">
-              {(['Full song', 'Hook only'] as TakeScope[]).map((s) => {
-                const on = scope === s;
-                return (
-                  <Press key={s} onPress={() => onScope(s)} style={[styles.scope, on && styles.scopeOn]} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={s}>
-                    <T v="caption" style={{ color: on ? color.stage : color.chalk }}>
-                      {s}
-                    </T>
-                  </Press>
-                );
-              })}
+          {idle ? (
+            <View style={styles.pickRow}>
+              {onListen ? (
+                <Press onPress={onListen} style={[styles.listen, listening && styles.scopeOn]} accessibilityLabel={listening ? 'Stop listening' : `Hear it from ${formatTime(from)}`}>
+                  {listening ? <Pause size={16} color={color.stage} /> : <Play size={16} color={color.chalk} />}
+                  <T v="caption" style={{ color: listening ? color.stage : color.chalk }}>
+                    {listening ? 'Stop' : 'Listen'}
+                  </T>
+                </Press>
+              ) : null}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scopes} accessibilityRole="radiogroup" accessibilityLabel="What this take covers">
+                {partId === 'custom' ? (
+                  <View style={[styles.scope, styles.scopeOn]}>
+                    <T v="caption" style={{ color: color.stage }}>{`From ${formatTime(from)}`}</T>
+                  </View>
+                ) : null}
+                {parts.map((part) => {
+                  const on = partId === part.id;
+                  return (
+                    <Press key={part.id} onPress={() => onPart(part.id)} style={[styles.scope, on && styles.scopeOn]} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={`${part.label}, ${formatTime(part.from)} to ${formatTime(part.to)}`}>
+                      <T v="caption" style={{ color: on ? color.stage : color.chalk }}>
+                        {part.label}
+                      </T>
+                    </Press>
+                  );
+                })}
+              </ScrollView>
             </View>
           ) : null}
 
@@ -421,10 +451,24 @@ const styles = StyleSheet.create({
     marginLeft: -1,
     backgroundColor: color.chalk,
   },
+  pickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.s,
+  },
+  listen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: space.m,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(242,240,236,0.4)',
+  },
   scopes: {
     flexDirection: 'row',
     gap: space.s,
-    alignSelf: 'center',
   },
   scope: {
     minHeight: 36,

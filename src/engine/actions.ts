@@ -53,8 +53,64 @@ function withIntro(before: Project, after: Project): Project {
   const prev = currentStage(before)?.id;
   const next = currentStage(after)?.id;
   if (!next || prev === next) return after;
-  const intro = stageIntro(after, next);
-  return post(after, 'director', intro.text, { stage: next, attachment: intro.attachment });
+  const ready = next === 'looks' ? pitchPlan(after) : after;
+  const intro = stageIntro(ready, next);
+  return post(ready, 'director', intro.text, { stage: next, attachment: intro.attachment });
+}
+
+/** The stretch of song time the video covers: the snippet the artist picked, or the whole song. */
+export function videoRange(p: Project): { start: number; end: number } {
+  const duration = p.song?.durationSec ?? 0;
+  if (!p.range) return { start: 0, end: duration };
+  const start = clamp(p.range.start, 0, duration);
+  return { start, end: clamp(p.range.end, start, duration) };
+}
+
+/** Snippet lengths the plan offers, in seconds. Each is rounded to whole bars of the song. */
+export const SNIPPET_LENGTHS = [15, 30, 60] as const;
+
+/** A snippet `seconds` long starting at song time `start`, on whole bars and inside the song. */
+export function snippetRange(song: Song, start: number, seconds: number): { start: number; end: number } {
+  const bar = barSec(song.bpm);
+  const bars = Math.max(1, Math.round(seconds / bar));
+  let from = clamp(start, 0, song.durationSec);
+  // Near the end of the song the snippet slides back so it is still the full length.
+  if (from + bars * bar > song.durationSec) from = Math.max(0, song.durationSec - bars * bar);
+  return { start: round(from), end: round(Math.min(song.durationSec, from + bars * bar)) };
+}
+
+/** The plan's length: the full song, or a snippet. Changing it re-pitches the b-roll to fit. */
+export function setRange(p: Project, range: { start: number; end: number } | undefined): Project {
+  if (p.planApproved || p.job || !p.song) return p;
+  const next: Project = { ...p, range: range ? { start: round(range.start), end: round(range.end) } : undefined };
+  if (JSON.stringify(next.range) === JSON.stringify(p.range)) return p;
+  const kept = { ...next, broll: { ...next.broll, ideas: next.broll.ideas.filter((i) => i.fromInbox) } };
+  return pitchPlan(kept);
+}
+
+/** A default for the effects pack when nobody picked a vibe: by tempo. */
+export function vibeForTempo(bpm: number): Vibe {
+  if (bpm >= 125) return 'Trap';
+  if (bpm <= 98) return 'Boom bap';
+  return 'Melodic';
+}
+
+/**
+ * The director's first pass at the plan: a look for every part of the song, b-roll for the verses
+ * and an effects pack. Keeps anything already chosen.
+ */
+export function pitchPlan(p: Project): Project {
+  const song = p.song;
+  if (!song) return p;
+  const suggested = suggestedLooks(song.sections);
+  const looks = Object.fromEntries(song.sections.map((s) => [s.id, p.looks[s.id] ?? suggested[s.id]]));
+  const vibe = p.vibe ?? vibeForTempo(song.bpm);
+  const inbox = p.broll.ideas.filter((i) => i.fromInbox);
+  const range = videoRange(p);
+  const inside = (i: BrollIdea) => i.at === undefined || (i.at >= range.start - 0.01 && i.at + i.durationSec <= range.end + 0.01);
+  const ideas = p.broll.ideas.some((i) => !i.fromInbox) ? p.broll.ideas : [...pitchBroll(song, vibe).filter(inside), ...inbox];
+  const fx = p.fx.pack ? p.fx : planForPack(VIBE_PACK[vibe], p.fx.intensity);
+  return { ...p, vibe, looks, broll: { ...p.broll, ideas }, fx };
 }
 
 function startJob(p: Project, stage: StageId, label: string, durationMs: number, external = false): Project {
@@ -105,7 +161,8 @@ export function blankProject(title: string, now = Date.now()): Project {
 
 export interface NewProjectInput {
   song: Song;
-  vibe: Vibe;
+  /** Optional: without one the effects pack is picked from the tempo. */
+  vibe?: Vibe;
   formats: Format[];
   pipeline?: Project['pipeline'];
 }
@@ -132,15 +189,24 @@ function setSong(p: Project, input: NewProjectInput, first: boolean): Project {
   const before = p;
   const where = input.formats.map(formatName).join(' and ');
   const mapped = input.song.analyzed;
+  const changedSong = !!p.song && (p.song.audioId !== input.song.audioId || JSON.stringify(p.song.sections) !== JSON.stringify(input.song.sections));
+  // A new song or new parts: the old plan's looks and pitched b-roll no longer line up.
+  const looks = changedSong ? {} : p.looks;
+  const broll = changedSong ? { ...p.broll, ideas: p.broll.ideas.filter((i) => i.fromInbox) } : p.broll;
   let next: Project = {
     ...p,
+    looks,
+    broll,
+    // New parts mean a new plan to lock; a snippet that no longer fits the song goes too.
+    planApproved: changedSong ? false : p.planApproved,
+    range: changedSong && p.range && p.range.end > input.song.durationSec ? undefined : p.range,
     song: input.song,
-    vibe: input.vibe,
+    vibe: input.vibe ?? p.vibe ?? vibeForTempo(input.song.bpm),
     formats: input.formats,
     exportState: { ...p.exportState, formats: input.formats },
     takePlan: p.takePlan.length ? p.takePlan : DEFAULT_TAKE_PLAN,
   };
-  const lead = `Locked in: "${input.song.title}", ${input.vibe.toLowerCase()} vibe${first ? `, cut for ${where}` : ''}.`;
+  const lead = `Locked in: "${input.song.title}"${first ? `, cut for ${where}` : ''}.`;
   if (!mapped) {
     next = post(next, 'director', `${lead} Give me a second to map the track.`, { stage: 'song' });
     return startJob(next, 'song', 'Mapping your track: tempo, bars and sections', 2600);
@@ -304,9 +370,15 @@ export function removeClip(p: Project, clipId: string): Project {
 export function coverage(p: Project): number {
   const song = p.song;
   if (!song || song.durationSec <= 0) return 0;
-  const spans = p.takes.map((t) => [t.start, t.end] as [number, number]).sort((a, b) => a[0] - b[0]);
+  const range = videoRange(p);
+  const length = range.end - range.start;
+  if (length <= 0) return 0;
+  const spans = p.takes
+    .map((t) => [Math.max(t.start, range.start), Math.min(t.end, range.end)] as [number, number])
+    .filter(([s, e]) => e > s)
+    .sort((a, b) => a[0] - b[0]);
   let covered = 0;
-  let cursor = 0;
+  let cursor = range.start;
   for (const [s, e] of spans) {
     const from = Math.max(s, cursor);
     if (e > from) {
@@ -314,7 +386,7 @@ export function coverage(p: Project): number {
       cursor = e;
     }
   }
-  return Math.min(1, covered / song.durationSec);
+  return Math.min(1, covered / length);
 }
 
 export function finishShooting(p: Project): Project {
@@ -357,7 +429,11 @@ export function buildCut(p: Project, seed = p.cut.seed): CutSegment[] {
   /** When each take was last on screen, so the cut rotates through all of them. */
   const lastUsed = new Map<string, number>();
 
-  for (const section of song.sections) {
+  const range = videoRange(p);
+  for (const whole of song.sections) {
+    // Only the part of the song the video covers gets cut.
+    const section = { ...whole, start: Math.max(whole.start, range.start), end: Math.min(whole.end, range.end) };
+    if (section.end - section.start < 0.01) continue;
     let length = (section.kind === 'hook' ? hookBars : verseBars) * bar;
     while (length > longest && length > bar / 2) length /= 2;
     let t = section.start;
@@ -415,8 +491,9 @@ function round(n: number): number {
 }
 
 /** The plan can still change: nothing has been sent to the switch yet. */
+/** The cut can change until the switch starts. */
 function planOpen(p: Project): boolean {
-  return !p.planApproved && p.shots.length === 0 && !p.job;
+  return p.shots.length === 0 && !p.job && p.plates === 'none';
 }
 
 export function swapSegmentTake(p: Project, segmentId: string, takeId: string): Project {
@@ -445,13 +522,7 @@ export function cutLine(p: Project): string {
 export function lockCut(p: Project): Project {
   if (p.cut.segments.length === 0 || p.cut.locked) return p;
   const before = p;
-  const song = p.song;
-  const looks = song ? { ...suggestedLooks(song.sections), ...p.looks } : p.looks;
-  const pitched = song ? pitchBroll(song, p.vibe) : [];
-  const inbox = p.broll.ideas.filter((i) => i.fromInbox);
-  const ideas = p.broll.ideas.some((i) => !i.fromInbox) ? p.broll.ideas : [...pitched, ...inbox];
-  const fx = p.fx.pack || !p.vibe ? p.fx : planForPack(VIBE_PACK[p.vibe], p.fx.intensity);
-  const next: Project = { ...p, cut: { ...p.cut, locked: true }, looks, broll: { ...p.broll, ideas }, fx };
+  const next: Project = pitchPlan({ ...p, cut: { ...p.cut, locked: true } });
   return withIntro(before, next);
 }
 
@@ -503,12 +574,13 @@ export function setSwitchSettings(p: Project, patch: Partial<SwitchSettings>): P
   return { ...p, switchSettings: next, looks };
 }
 
-/** The artist signs off on the plan. In autopilot the director runs everything after this. */
+/** The artist locks the plan before the shoot. In autopilot the director runs everything after the shoot. */
 export function approvePlan(p: Project): Project {
   const sections = p.song?.sections ?? [];
-  if (p.planApproved || !p.cut.locked || !sections.every((s) => p.looks[s.id])) return p;
-  const next: Project = { ...p, planApproved: true };
-  return post(next, 'director', "Running it. Reference frames first, then the switch. I'll stop if a shot needs you.", { stage: 'looks' });
+  if (p.planApproved || !p.song?.analyzed || !sections.every((s) => p.looks[s.id])) return p;
+  const before = p;
+  const next = post({ ...p, planApproved: true }, 'director', "Plan's locked. You know what we're making; now let's get the takes.", { stage: 'looks' });
+  return withIntro(before, next);
 }
 
 export function makePlates(p: Project): Project {
@@ -516,7 +588,7 @@ export function makePlates(p: Project): Project {
   if (p.job || !p.planApproved || p.plates !== 'none' || !sections.every((s) => p.looks[s.id])) return p;
   if (p.pipeline === 'live' && !liveStage(p, 'looks')) {
     // No reference generator on the server: SwitchX works from the prompts and the artist's own images.
-    return { ...p, plates: 'ready' };
+    return startSwitch({ ...p, plates: 'approved' });
   }
   return startJob(p, 'looks', 'Building a reference frame for each look', 3200, liveStage(p, 'looks'));
 }
@@ -573,6 +645,9 @@ export function buildShots(p: Project, maxFrames: number = p.switchSettings.maxF
 }
 
 export function startSwitch(p: Project, opts: { external?: boolean } = {}): Project {
+  // Reference frames come first; the switch starts on its own when they are in.
+  if (p.plates === 'none' && !p.job && p.shots.length === 0 && p.cut.locked) return makePlates(p);
+  if (p.plates === 'ready') p = { ...p, plates: 'approved' };
   if (p.plates !== 'approved' || p.job || p.shots.length > 0) return p;
   const shots = buildShots(p);
   if (shots.length === 0) return p;
@@ -817,6 +892,7 @@ export function revisit(p: Project, id: StageId): Project {
   next = post(next, 'system', `Went back to ${STAGE_BY_ID[id].title}.`);
   // Going back to the cut means the takes are already in: cut again right away.
   if (id === 'cut' && next.takes.length) return startJob(next, 'cut', 'Sorting takes and cutting on the beat', 2400);
+  if (id === 'looks') next = pitchPlan(next);
   const intro = stageIntro(next, id);
   return post(next, 'director', intro.text, { stage: id, attachment: intro.attachment });
 }
@@ -832,9 +908,10 @@ function completeJob(p: Project, job: Job): Project {
     case 'cut':
       next = { ...next, cut: { ...next.cut, segments: buildCut(next), locked: false } };
       break;
-    case 'looks':
-      next = { ...next, plates: 'ready' };
-      break;
+    case 'looks': {
+      next = post({ ...next, plates: 'approved' }, 'director', jobResult(next, 'looks')?.text ?? 'Reference frames are in.', { stage: 'switch' });
+      return startSwitch(next);
+    }
     case 'switch': {
       // A redo pass reports on itself; the first full pass gets the director's summary below.
       const redo = next.shots.some((s) => s.status === 'approved');

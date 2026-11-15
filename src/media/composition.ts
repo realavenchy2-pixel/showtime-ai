@@ -1,3 +1,4 @@
+import { videoRange } from '@/engine/actions';
 import { buildCues, fxPack, LOOK_GRADE, NEUTRAL_GRADE, type Grade } from '@/engine/fx';
 import type { Format, FxCue, LyricLine, Project, Shot, Take, TakeAngle } from '@/engine/types';
 
@@ -32,6 +33,9 @@ export interface CompSource {
 
 export interface Composition {
   title: string;
+  /** Song time where the video starts: 0 for the full song, later for a snippet. */
+  startSec: number;
+  /** Song time where the video ends. */
   durationSec: number;
   bpm: number;
   downbeatSec: number;
@@ -118,9 +122,11 @@ export function buildComposition(p: Project, opts: CompositionOptions = {}): Com
 
   const effects = opts.effects ?? p.final.builds > 0;
   const pack = effects ? fxPack(p.fx.pack) : undefined;
+  const range = videoRange(p);
   return {
     title: p.title,
-    durationSec: song.durationSec,
+    startSec: range.start,
+    durationSec: range.end,
     bpm: song.bpm,
     downbeatSec: song.downbeatSec,
     aspect: aspectOf(opts.format ?? previewFormat(p)),

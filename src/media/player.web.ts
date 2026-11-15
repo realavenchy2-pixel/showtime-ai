@@ -66,6 +66,16 @@ export class Player {
       this.audio.src = songUrl;
     }
     this.state = { ...this.state, duration: comp.durationSec };
+    // A snippet opens at its first frame.
+    const now = this.audio.currentTime || 0;
+    if (now < comp.startSec || now > comp.durationSec) {
+      try {
+        this.audio.currentTime = comp.startSec;
+      } catch {
+        // Not seekable until the song loads; play() and seek() start from the snippet anyway.
+      }
+      this.state = { ...this.state, time: comp.startSec };
+    }
     this.touch();
     this.emit(true);
   }
@@ -93,8 +103,8 @@ export class Player {
     const comp = this.comp;
     if (!comp) return;
     const playing = !this.audio.paused;
-    const time = Math.min(comp.durationSec, this.audio.currentTime || 0);
-    if (playing && this.stopAt !== undefined && time >= this.stopAt) {
+    const time = Math.max(comp.startSec, Math.min(comp.durationSec, this.audio.currentTime || 0));
+    if (playing && ((this.stopAt !== undefined && time >= this.stopAt) || time >= comp.durationSec - 0.02)) {
       this.stopAt = undefined;
       this.pause();
     }
@@ -109,7 +119,8 @@ export class Player {
 
   play(until?: number): void {
     this.stopAt = until;
-    if (this.comp && this.audio.currentTime >= this.comp.durationSec - 0.05) this.audio.currentTime = 0;
+    const comp = this.comp;
+    if (comp && (this.audio.currentTime >= comp.durationSec - 0.05 || this.audio.currentTime < comp.startSec - 0.05)) this.audio.currentTime = comp.startSec;
     void this.audio.play().catch(() => {});
   }
 
@@ -124,7 +135,7 @@ export class Player {
   }
 
   seek(time: number): void {
-    const t = Math.max(0, Math.min(this.comp?.durationSec ?? 0, time));
+    const t = Math.max(this.comp?.startSec ?? 0, Math.min(this.comp?.durationSec ?? 0, time));
     this.audio.currentTime = t;
     this.state = { ...this.state, time: t };
     this.touch();

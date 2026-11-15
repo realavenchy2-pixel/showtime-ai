@@ -288,6 +288,8 @@ export interface Project {
   song?: Song;
   vibe?: Vibe;
   formats: Format[];
+  /** The part of the song the video covers. Unset means the full song. */
+  range?: { start: number; end: number };
   takePlan: PlannedTake[];
   takes: Take[];
   clips: Clip[];
@@ -295,7 +297,7 @@ export interface Project {
   cut: { segments: CutSegment[]; locked: boolean; seed: number };
   /** Section id to look. */
   looks: Record<string, Look>;
-  /** The artist said "run it" on the director's plan. */
+  /** The artist locked the plan, before the shoot. */
   planApproved: boolean;
   /** Reference frames for each look. */
   plates: 'none' | 'ready' | 'approved';

@@ -53,6 +53,7 @@ Keep the checklist current. A session can end without warning.
 - [x] Export verified with a real file check (headless run drops frames at 1080p; an offline frame-by-frame export is the fix)
 - [x] Server (`server/`) and live wiring (`src/live/`): SwitchX 3.0 through the Product API, public API fallback, Claude director, fal H3 b-roll. Verified end to end against stand-in providers (`tools/e2e_live.py` + `tools/mock_studio.mjs` in the scratchpad), not yet against real keys
 - [x] Brand: the artist's pink S logo, accent `#FD1B55` (icons are upscaled from a 300 px crop; ask for the vector)
+- [x] Artist-first front half: the artist marks the song's parts while it plays (no auto hook guessing), no genre pick (effects pack defaults by tempo), the plan comes before the shoot with full song or a 15/30/60-second snippet, the recorder picks any part, a tap point, and has Listen; the stage checklist scrolls
 - [ ] First run with real keys: `npm run server:doctor`, then one short switch
 - [ ] Offline export (every frame, any device speed), generated reference frames, Select/custom mattes, native live switch
 - [ ] v2 merged to main

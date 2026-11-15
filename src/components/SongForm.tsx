@@ -1,52 +1,27 @@
 import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
 
 import { Check, Monitor, Music, Smartphone, Upload, type LucideIcon } from '@/components/icons';
 import { formatTime } from '@/engine/director';
 import { DEMO_TRACKS, demoDuration, songFromDemo, songFromImport } from '@/engine/samples';
-import type { Format, Section, SectionKind, Song, Vibe } from '@/engine/types';
+import type { Format, Song } from '@/engine/types';
 import { haptic } from '@/lib/haptics';
-import { sectionsForTempo } from '@/media/analyze';
 import { pickSong } from '@/media/pick';
 import { color, radius, space } from '@/theme/tokens';
 
 import { Press } from './Press';
 import { SectionTitle } from './Screen';
+import { SongMap, wholeSong } from './SongMap';
 import { StageGlyph } from './StageGlyph';
 import { T } from './T';
 import { showToast } from './Toast';
 
-export const VIBES: Vibe[] = ['Drill', 'Trap', 'Melodic', 'Boom bap', 'Dark'];
-
 export interface SongChoice {
   song?: Song;
-  vibe?: Vibe;
   formats: Format[];
 }
 
-const KINDS: SectionKind[] = ['verse', 'hook', 'bridge', 'intro', 'outro'];
-
-/** Names sections by kind, counting the verses. */
-function relabel(sections: Section[]): Section[] {
-  let verse = 0;
-  return sections.map((s) => ({
-    ...s,
-    label: s.kind === 'verse' ? `Verse ${++verse}` : s.kind === 'hook' ? 'Hook' : s.kind === 'intro' ? 'Intro' : s.kind === 'outro' ? 'Outro' : 'Bridge',
-  }));
-}
-
-function wavePath(peaks: number[], height: number): string {
-  const w = 1000 / peaks.length;
-  let d = '';
-  peaks.forEach((p, i) => {
-    const h = Math.max(1.5, p * height);
-    d += `M${(i * w).toFixed(2)} ${((height - h) / 2).toFixed(2)}h${(w * 0.62).toFixed(2)}v${h.toFixed(2)}h${(-w * 0.62).toFixed(2)}z`;
-  });
-  return d;
-}
-
-/** Stage 1: the track, the vibe and where the video gets posted. */
+/** Stage 1: the track, its parts, and where the video gets posted. */
 export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v: SongChoice) => void }) {
   const [busy, setBusy] = useState(false);
   const [needsTempo, setNeedsTempo] = useState(false);
@@ -71,8 +46,8 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
       }
       const unsure = picked.bpm <= 0 || picked.confidence < 0.2;
       const bpm = picked.bpm > 0 ? picked.bpm : 120;
-      const sections = !unsure && picked.sections?.length ? picked.sections : sectionsForTempo(bpm, picked.downbeatSec, picked.durationSec);
-      onChange({ ...value, song: songFromImport({ ...picked, bpm, sections }, true) });
+      // The artist marks the parts; every song is built different.
+      onChange({ ...value, song: songFromImport({ ...picked, bpm, sections: wholeSong(picked.durationSec) }, true) });
       setNeedsTempo(unsure);
       haptic.success();
     } catch {
@@ -84,15 +59,8 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
 
   const setTempo = (bpm: number) => {
     if (!imported) return;
-    onChange({ ...value, song: { ...imported, bpm, sections: sectionsForTempo(bpm, imported.downbeatSec, imported.durationSec) } });
+    onChange({ ...value, song: { ...imported, bpm } });
     setNeedsTempo(false);
-  };
-
-  const cycleSection = (id: string) => {
-    if (!imported) return;
-    haptic.select();
-    const sections = relabel(imported.sections.map((s) => (s.id === id ? { ...s, kind: KINDS[(KINDS.indexOf(s.kind) + 1) % KINDS.length] } : s)));
-    onChange({ ...value, song: { ...imported, sections } });
   };
 
   return (
@@ -103,56 +71,14 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
           {busy ? <StageGlyph status="working" size={20} /> : <Upload size={20} color={color.chalk} />}
           <View style={styles.flex}>
             <T v="callout" numberOfLines={1}>
-              {busy ? 'Mapping your track' : imported ? imported.title : 'Upload a song'}
+              {busy ? 'Reading your track' : imported ? imported.title : 'Upload a song'}
             </T>
             <T v="caption" c="smoke">
-              {busy ? 'Finding the tempo, bars and sections' : imported ? `${formatTime(imported.durationSec)} long, ${Math.round(imported.bpm)} BPM. Tap to pick another.` : 'MP3, WAV or M4A'}
+              {busy ? 'Finding the tempo and the beat' : imported ? `${formatTime(imported.durationSec)} long, ${Math.round(imported.bpm)} BPM. Tap to pick another.` : 'MP3, WAV or M4A'}
             </T>
           </View>
           {imported && !busy ? <Check size={20} color={color.chalk} /> : null}
         </Press>
-
-        {imported ? (
-          <View style={styles.mapped}>
-            {imported.peaks?.length ? (
-              <View style={styles.wave}>
-                <Svg width="100%" height="100%" viewBox="0 0 1000 40" preserveAspectRatio="none">
-                  <Path d={wavePath(imported.peaks, 40)} fill={color.chalk} opacity={0.55} />
-                </Svg>
-              </View>
-            ) : null}
-            {needsTempo ? (
-              <TapTempo onDone={setTempo} />
-            ) : (
-              <>
-                <View style={styles.sections}>
-                  {imported.sections.map((s) => (
-                    <Press
-                      key={s.id}
-                      onPress={() => cycleSection(s.id)}
-                      style={[styles.section, s.kind === 'hook' && styles.sectionHook]}
-                      accessibilityLabel={`${s.label}, starts at ${formatTime(s.start)}. Tap to change what it is.`}>
-                      <T v="micro" c={s.kind === 'hook' ? 'chalk' : 'smoke'} numberOfLines={1}>
-                        {s.label}
-                      </T>
-                      <T v="micro" c="ash">
-                        {formatTime(s.start)}
-                      </T>
-                    </Press>
-                  ))}
-                </View>
-                <T v="caption" c="ash">
-                  My first read of the song. Tap a part to change what it is. Hooks get the fastest cuts and the hardest effects.
-                </T>
-                <Press onPress={() => setNeedsTempo(true)} style={styles.link} accessibilityLabel="Tempo looks wrong, tap it in">
-                  <T v="caption" c="smoke">
-                    Tempo off? Tap it in
-                  </T>
-                </Press>
-              </>
-            )}
-          </View>
-        ) : null}
 
         <T v="micro" c="ash" style={styles.or}>
           Or try a demo beat
@@ -183,30 +109,25 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
         })}
       </View>
 
-      <View style={styles.block}>
-        <SectionTitle detail="Sets the grade, the pacing and the effects pack. You can change it later.">Vibe</SectionTitle>
-        <View style={styles.chips}>
-          {VIBES.map((v) => {
-            const selected = value.vibe === v;
-            return (
-              <Press
-                key={v}
-                onPress={() => {
-                  haptic.select();
-                  onChange({ ...value, vibe: v });
-                }}
-                style={[styles.chip, selected && styles.chipOn]}
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                accessibilityLabel={v}>
-                <T v="callout" style={{ color: selected ? color.stage : color.chalk }}>
-                  {v}
-                </T>
-              </Press>
-            );
-          })}
+      {song ? (
+        <View style={styles.block}>
+          <SectionTitle detail="Play it and mark where each part starts. You know your song; I cut to it.">Your song’s parts</SectionTitle>
+          <View style={styles.mapped}>
+            <SongMap song={song} onChange={(sections) => onChange({ ...value, song: { ...song, sections } })} />
+            {imported ? (
+              needsTempo ? (
+                <TapTempo onDone={setTempo} />
+              ) : (
+                <Press onPress={() => setNeedsTempo(true)} style={styles.link} accessibilityLabel="Tempo looks wrong, tap it in">
+                  <T v="caption" c="smoke">
+                    {`${Math.round(imported.bpm)} BPM. Off? Tap it in`}
+                  </T>
+                </Press>
+              )
+            ) : null}
+          </View>
         </View>
-      </View>
+      ) : null}
 
       <View style={styles.block}>
         <SectionTitle detail="Each format is rendered from the same edit.">Where it goes</SectionTitle>
@@ -244,7 +165,7 @@ function TapTempo({ onDone }: { onDone: (bpm: number) => void }) {
   return (
     <View style={styles.tapWrap}>
       <T v="caption" c="smoke">
-        I couldn’t lock onto the tempo. Play the song and tap along to the beat.
+        Tap along to the beat while the song plays. Cuts land on this tempo.
       </T>
       <View style={styles.tapRow}>
         <Press onPress={tap} style={styles.tapPad} accessibilityLabel="Tap on every beat">
@@ -284,7 +205,7 @@ function FormatCard({ icon: Icon, title, detail, selected, onPress }: { icon: Lu
 }
 
 export function songChoiceReady(v: SongChoice): v is Required<SongChoice> {
-  return !!v.song && !!v.vibe && v.formats.length > 0;
+  return !!v.song && v.formats.length > 0;
 }
 
 const styles = StyleSheet.create({

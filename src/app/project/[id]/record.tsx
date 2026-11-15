@@ -13,9 +13,9 @@ import { T } from '@/components/T';
 import { showToast } from '@/components/Toast';
 import { RECORD_FPS } from '@/engine/switchx';
 import { useApp, useProject } from '@/engine/store';
-import type { TakeScope } from '@/engine/types';
 import { addRecorded } from '@/lib/footage';
 import { haptic } from '@/lib/haptics';
+import { useTakeRange } from '@/lib/takeRange';
 import { songUrl } from '@/media/audio';
 import { saveMedia } from '@/media/library';
 import { color } from '@/theme/tokens';
@@ -42,15 +42,13 @@ export default function RecordScreen() {
   const [phase, setPhase] = useState<RecorderPhase>('opening');
   const [beat, setBeat] = useState(4);
   const [songTime, setSongTime] = useState(0);
-  const [scope, setScope] = useState<TakeScope>('Full song');
   const [facing, setFacing] = useState<'front' | 'back'>('front');
+  const [listening, setListening] = useState(false);
   const player = useAudioPlayer(url, { updateInterval: 100 });
 
   const song = project?.song;
-  const hooks = song?.sections.filter((s) => s.kind === 'hook') ?? [];
-  const hookOnly = scope === 'Hook only' && hooks.length > 0;
-  const from = hookOnly ? hooks[0].start : 0;
-  const to = hookOnly ? hooks[0].end : song?.durationSec ?? 0;
+  const range = useTakeRange(project);
+  const { from, to, hookOnly } = range;
   const n = project?.takes.length ?? 0;
 
   useEffect(() => {
@@ -100,6 +98,33 @@ export default function RecordScreen() {
     const timer = setInterval(onTick, 100);
     return () => clearInterval(timer);
   }, [phase]);
+
+  const onListenTick = useEffectEvent(() => {
+    const t = player.currentTime;
+    setSongTime(t);
+    if (!player.playing || t >= to - 0.05) {
+      player.pause();
+      setListening(false);
+    }
+  });
+  useEffect(() => {
+    if (!listening) return;
+    const timer = setInterval(onListenTick, 100);
+    return () => clearInterval(timer);
+  }, [listening]);
+  const stopListening = () => {
+    if (!listening) return;
+    player.pause();
+    setListening(false);
+  };
+  const listen = async () => {
+    if (phase !== 'idle') return;
+    if (listening) return stopListening();
+    await player.seekTo(from).catch(() => {});
+    setSongTime(from);
+    player.play();
+    setListening(true);
+  };
 
   if (!project || !song) {
     return (
@@ -151,6 +176,8 @@ export default function RecordScreen() {
 
   const record = async () => {
     if (phase !== 'idle' || !camera.current) return;
+    player.pause();
+    setListening(false);
     const beatMs = 60000 / song.bpm;
     await player.seekTo(from).catch(() => {});
     setSongTime(from);
@@ -197,11 +224,20 @@ export default function RecordScreen() {
       to={to}
       takes={project.takes}
       planned={project.takePlan[n]}
-      scope={scope}
-      hasHook={hooks.length > 0}
+      parts={range.parts}
+      partId={range.partId}
       peaks={song.peaks}
       blocked={phase === 'blocked' ? DENIED : undefined}
-      onScope={setScope}
+      listening={listening}
+      onListen={() => void listen()}
+      onPart={(id) => {
+        stopListening();
+        range.pick(id);
+      }}
+      onStartAt={(t) => {
+        stopListening();
+        range.startFrom(t);
+      }}
       onRecord={() => void record()}
       onStop={stop}
       onFlip={granted ? () => setFacing((f) => (f === 'front' ? 'back' : 'front')) : undefined}

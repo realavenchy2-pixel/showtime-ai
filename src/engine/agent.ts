@@ -7,13 +7,11 @@ import {
   approveBroll,
   approveCleanShots,
   approvePlan,
-  approvePlates,
   buildEdit,
   finishShooting,
   generateBroll,
   lockCut,
   lockEdit,
-  makePlates,
   redoShot,
   reshuffleCut,
   revisit,
@@ -49,11 +47,6 @@ export function agentAct(p: Project): Project | null {
   switch (stage.id) {
     case 'cut':
       return p.cut.segments.length ? moved(lockCut(p)) : null;
-    case 'looks':
-      if (!p.planApproved) return null;
-      if (p.plates === 'none') return moved(makePlates(p));
-      if (p.plates === 'ready') return moved(approvePlates(p));
-      return null;
     case 'switch': {
       if (p.shots.length === 0) return moved(startSwitch(p));
       const back = p.shots.every((s) => s.status !== 'queued' && s.status !== 'rendering');
@@ -153,7 +146,7 @@ export function applyCommand(p: Project, cmd: AgentCommand): CommandResult {
       if (ids.length === 0) return { project: p, ok: false, note: `I don't see a section called "${cmd.section}" in this song.` };
       const all = ids.length === (p.song?.sections.length ?? 0);
       const next = all ? setLookEverywhere(p, cmd.location) : ids.reduce((acc, id) => setLook(acc, id, cmd.location), p);
-      return result(next, `${locationTitle(cmd.location)} for ${sectionWord(p, cmd.section)}.`, 'Looks are locked once the switch starts. Tap Looks on the slate to go back and change them.');
+      return result(next, `${locationTitle(cmd.location)} for ${sectionWord(p, cmd.section)}.`, 'Looks are locked once the switch starts. Tap Plan on the slate to go back and change them.');
     }
     case 'setFxPack': {
       const title = FX_PACKS.find((x) => x.id === cmd.pack)?.title ?? cmd.pack;
@@ -183,8 +176,9 @@ export function applyCommand(p: Project, cmd: AgentCommand): CommandResult {
       return result(p.broll.ideas.some((i) => i.keep) ? cleared : p, 'Took the b-roll out of the plan.', 'There is no b-roll in the plan.');
     }
     case 'run': {
-      if (!p.planApproved && currentStage(p)?.id === 'looks') return result(approvePlan(p), 'Running it.', 'Pick a look for every section first.');
-      return { project: p, ok: false, note: p.planApproved ? "It's already running." : "There's no plan to run yet. I pitch one as soon as the cut is done." };
+      if (!p.planApproved && currentStage(p)?.id === 'looks') return result(approvePlan(p), "Plan's locked.", 'Pick a look for every part first.');
+      if (currentStage(p)?.id === 'switch' && p.shots.length === 0) return result(startSwitch(p), 'Starting the switch.', 'The switch is already running.');
+      return { project: p, ok: false, note: p.planApproved ? 'The plan is locked. The director runs the rest after the shoot.' : 'Bring the song in first; I pitch the plan right after.' };
     }
     case 'wrapShoot':
       return result(finishShooting(p), "That's a wrap on the shoot.", p.takes.length === 0 ? 'Record or upload at least one take first.' : 'The shoot is already wrapped.');

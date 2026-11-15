@@ -76,7 +76,7 @@ export async function exportComposition(comp: Composition, songUrl: string, opts
       if (own) audio.load();
     });
   }
-  audio.currentTime = 0;
+  audio.currentTime = comp.startSec;
 
   // The song goes straight into the file, not to the speakers.
   const ac = audioContext();
@@ -130,11 +130,12 @@ export async function exportComposition(comp: Composition, songUrl: string, opts
     };
     opts.signal?.addEventListener('abort', () => recorder.state !== 'inactive' && recorder.stop(), { once: true });
 
+    const start = comp.startSec;
     const end = comp.durationSec;
     const draw = () => {
       const t = audio.currentTime;
       compositor.render(Math.min(t, end), true);
-      opts.onProgress?.(Math.min(1, t / end));
+      opts.onProgress?.(Math.min(1, Math.max(0, (t - start) / Math.max(0.001, end - start))));
       if (t >= end - 0.02 || audio.ended) {
         if (recorder.state !== 'inactive') recorder.stop();
         return;
@@ -143,7 +144,7 @@ export async function exportComposition(comp: Composition, songUrl: string, opts
     };
 
     // Draw the first frame before recording starts so the file doesn't open on black.
-    compositor.render(0, false);
+    compositor.render(start, false);
     const begin = () => {
       recorder.start(1000);
       playPrimed(audio).then(() => (raf = requestAnimationFrame(draw)), () => fail(new Error('The export could not start playing the song.')));
@@ -151,8 +152,8 @@ export async function exportComposition(comp: Composition, songUrl: string, opts
     // Give the first footage file a moment to decode its opening frame.
     const waitStart = performance.now();
     const wait = () => {
-      compositor.render(0, false);
-      if (compositor.ready(0) || performance.now() - waitStart > 4000) begin();
+      compositor.render(start, false);
+      if (compositor.ready(start) || performance.now() - waitStart > 4000) begin();
       else raf = requestAnimationFrame(wait);
     };
     wait();

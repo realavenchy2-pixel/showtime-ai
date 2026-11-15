@@ -46,9 +46,7 @@ export function nextActions(p: Project): ActionSet {
     case 'cut':
       return { primary: { label: 'Review the cut', open: 'cut' } };
     case 'looks':
-      if (!p.planApproved) return { primary: { label: 'Run it', run: 'approvePlan' }, secondary: { label: 'Change the plan', open: 'looks' } };
-      if (p.plates === 'ready') return { primary: { label: 'Review references', open: 'looks' } };
-      return { primary: { label: 'Make reference frames', run: 'makePlates' } };
+      return { primary: { label: 'Lock the plan', run: 'approvePlan' }, secondary: { label: 'Change the plan', open: 'looks' } };
     case 'switch': {
       if (p.shots.length === 0) return { primary: { label: 'Start the switch', run: 'startSwitch' } };
       const waiting = p.shots.filter((s) => s.status === 'ready' || s.status === 'failed').length;
@@ -74,7 +72,7 @@ export function nextActions(p: Project): ActionSet {
 export function stageIntro(p: Project, id: StageId): { text: string; attachment?: AttachmentKind } {
   switch (id) {
     case 'song':
-      return { text: 'What are we shooting? Bring the track, pick the vibe, and tell me where it posts.' };
+      return { text: 'What are we shooting? Bring the track, mark its parts, and tell me where it posts.' };
     case 'shoot':
       return {
         text: 'Your move. Record with the song playing, or upload clips you already shot. One full pass is enough to start; every extra take is another angle I can cut to.',
@@ -86,13 +84,13 @@ export function stageIntro(p: Project, id: StageId): { text: string; attachment?
     }
     case 'looks':
       return {
-        text: "Here's the video I'd make. Change anything, then hit Run it and I take it from there.",
+        text: "Here's the video I'd make: where each part takes place, the b-roll and the effects. Change anything, then lock it and we shoot.",
         attachment: 'plan',
       };
     case 'switch': {
       const shots = p.cut.segments.filter((s) => s.takeId).length;
       return {
-        text: `References are locked. Sending ${shots === 1 ? 'the shot' : `${shots} shots`} through SwitchX, ${SWITCHX.concurrency} at a time. Only the seconds on screen get rendered.`,
+        text: `Cut's locked. Reference frames first, then ${shots === 1 ? 'the shot goes' : `${shots} shots go`} through SwitchX, ${SWITCHX.concurrency} at a time. Only the seconds on screen get rendered.`,
       };
     }
     case 'broll': {

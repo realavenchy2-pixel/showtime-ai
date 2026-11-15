@@ -1,6 +1,7 @@
 import { Check, Clapperboard } from '@/components/icons';
 import { StyleSheet, View } from 'react-native';
 
+import { videoRange } from '@/engine/actions';
 import { estimateBudget } from '@/engine/agent';
 import { formatTime, lookSummary } from '@/engine/director';
 import { fxPack } from '@/engine/fx';
@@ -92,7 +93,7 @@ function TakePlan({ project }: { project: Project }) {
                 {t.angle}
               </T>
               <T v="caption" c="ash">
-                {t.scope}
+                {t.scope === 'Full song' && project.range ? 'Whole snippet' : t.scope}
               </T>
             </View>
             {done ? <Check size={18} color={color.chalk} /> : null}
@@ -140,17 +141,19 @@ function PlanCard({ project }: { project: Project }) {
   const budget = estimateBudget(project);
   const cutaways = project.broll.ideas.filter((i) => i.keep);
   const pack = fxPack(project.fx.pack);
+  const range = videoRange(project);
+  const shots = project.cut.segments.filter((s) => s.takeId).length;
   const rows: { label: string; value: string }[] = [
+    { label: 'Length', value: project.range ? `${formatTime(range.end - range.start)} snippet, ${formatTime(range.start)} to ${formatTime(range.end)}` : `Full song, ${formatTime(range.end)}` },
     { label: 'Looks', value: lookSummary(project) || 'Pick a look for every section' },
     {
       label: 'B-roll',
       value: cutaways.length ? `${cutaways.length} ${cutaways.length === 1 ? 'cutaway' : 'cutaways'}: ${cutaways.map((i) => i.shot.split(',')[0].toLowerCase()).join('; ')}` : 'None',
     },
     { label: 'Effects', value: pack ? `${pack.title} pack at ${project.fx.intensity}` : 'Picked in the edit' },
-    {
-      label: 'Switch',
-      value: `${project.cut.segments.filter((s) => s.takeId).length} shots, ${budget.switchFrames.toLocaleString('en-US')} frames at ${project.switchSettings.resolution}p`,
-    },
+    ...(shots
+      ? [{ label: 'Switch', value: `${shots} shots, ${budget.switchFrames.toLocaleString('en-US')} frames at ${project.switchSettings.resolution}p` }]
+      : [{ label: 'Shoot', value: 'Next. Record with the song playing, or upload clips' }]),
   ];
   return (
     <View style={styles.card}>

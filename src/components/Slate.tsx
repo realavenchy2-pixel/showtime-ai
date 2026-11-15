@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronUp } from '@/components/icons';
 import { useEffect, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -52,6 +52,7 @@ const curve = Easing.bezier(...easeOut);
 export function Slate({ project, expanded, onToggle, onRevisit }: Props) {
   const view = trackerView(project);
   const reduced = useReducedMotion();
+  const { height } = useWindowDimensions();
   const tilt = useSharedValue(0);
   const prevCompleted = useRef(view.completed);
 
@@ -104,7 +105,8 @@ export function Slate({ project, expanded, onToggle, onRevisit }: Props) {
       </Press>
 
       {expanded ? (
-        <View style={styles.list}>
+        // Scrolls on its own when the stages don't fit under the video.
+        <ScrollView style={[styles.list, { maxHeight: Math.max(220, Math.round(height * 0.46)) }]} contentContainerStyle={styles.listContent} nestedScrollEnabled showsVerticalScrollIndicator>
           {view.stages.map((s) => {
             const canGoBack = s.status === 'done' || s.status === 'skipped';
             return (
@@ -135,7 +137,7 @@ export function Slate({ project, expanded, onToggle, onRevisit }: Props) {
               </Press>
             );
           })}
-        </View>
+        </ScrollView>
       ) : null}
     </View>
   );
@@ -178,6 +180,8 @@ const styles = StyleSheet.create({
   list: {
     borderTopWidth: 1,
     borderTopColor: color.hairline,
+  },
+  listContent: {
     paddingHorizontal: space.l,
     paddingVertical: space.s,
   },

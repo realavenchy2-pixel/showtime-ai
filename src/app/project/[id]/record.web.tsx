@@ -8,9 +8,9 @@ import { goBack } from '@/components/Screen';
 import { T } from '@/components/T';
 import { showToast } from '@/components/Toast';
 import { useApp, useProject } from '@/engine/store';
-import type { TakeScope } from '@/engine/types';
 import { addRecorded } from '@/lib/footage';
 import { haptic } from '@/lib/haptics';
+import { useTakeRange } from '@/lib/takeRange';
 import { audioContext, playPrimed, primeElement, scheduleClick, songPeaks, songUrl } from '@/media/audio.web';
 import { cameraSupported, CameraSession, grabStill, type Facing } from '@/media/recorder.web';
 import { saveRecording } from '@/media/takes.web';
@@ -53,15 +53,13 @@ export default function RecordScreen() {
   const [blocked, setBlocked] = useState<{ title: string; body: string } | undefined>(() => (cameraSupported() ? undefined : NO_CAMERA));
   const [beat, setBeat] = useState(4);
   const [songTime, setSongTime] = useState(0);
-  const [scope, setScope] = useState<TakeScope>('Full song');
   const [facing, setFacing] = useState<Facing>('user');
   const [peaks, setPeaks] = useState<number[] | undefined>(project?.song?.peaks);
+  const [listening, setListening] = useState(false);
 
   const song = project?.song;
-  const hooks = song?.sections.filter((s) => s.kind === 'hook') ?? [];
-  const hookOnly = scope === 'Hook only' && hooks.length > 0;
-  const from = hookOnly ? hooks[0].start : 0;
-  const to = hookOnly ? hooks[0].end : song?.durationSec ?? 0;
+  const take = useTakeRange(project);
+  const { from, to, hookOnly } = take;
   const n = project?.takes.length ?? 0;
 
   // Camera: open once, close on the way out.
@@ -156,6 +154,38 @@ export default function RecordScreen() {
     return () => clearInterval(timer);
   }, [phase]);
 
+  // Listening: the song plays from where the take starts, so the artist hears the spot.
+  const onListenTick = useEffectEvent(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    setSongTime(audio.currentTime);
+    if (audio.paused || audio.currentTime >= to - 0.03) {
+      audio.pause();
+      setListening(false);
+    }
+  });
+  useEffect(() => {
+    if (!listening) return;
+    const timer = setInterval(onListenTick, 80);
+    return () => clearInterval(timer);
+  }, [listening]);
+  const stopListening = () => {
+    if (!listening) return;
+    audioRef.current?.pause();
+    setListening(false);
+  };
+  const listen = () => {
+    const audio = audioRef.current;
+    if (!audio || phase !== 'idle') return;
+    if (listening) return stopListening();
+    audio.currentTime = from;
+    setSongTime(from);
+    void audio.play().then(
+      () => setListening(true),
+      () => showToast('The song could not play. Check that this tab is allowed to play sound.'),
+    );
+  };
+
   if (!project || !song) {
     return (
       <View style={{ flex: 1, backgroundColor: color.stage, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
@@ -171,6 +201,7 @@ export default function RecordScreen() {
     const session = sessionRef.current;
     const audio = audioRef.current;
     if (!session || !audio || phase !== 'idle') return;
+    setListening(false);
     const run = (runRef.current += 1);
     const cancelled = () => runRef.current !== run;
     const ac = audioContext();
@@ -241,11 +272,20 @@ export default function RecordScreen() {
       to={to}
       takes={project.takes}
       planned={project.takePlan[n]}
-      scope={scope}
-      hasHook={hooks.length > 0}
+      parts={take.parts}
+      partId={take.partId}
       peaks={peaks}
       blocked={blocked}
-      onScope={setScope}
+      listening={listening}
+      onListen={phase === 'blocked' ? undefined : listen}
+      onPart={(id) => {
+        stopListening();
+        take.pick(id);
+      }}
+      onStartAt={(t) => {
+        stopListening();
+        take.startFrom(t);
+      }}
       onRecord={() => void record()}
       onStop={() => void stop()}
       onFlip={phase === 'blocked' ? undefined : () => void flip()}

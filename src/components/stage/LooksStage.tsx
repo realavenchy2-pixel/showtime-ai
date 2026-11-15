@@ -1,12 +1,11 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
-import { ChevronDown, ChevronUp, ImagePlus, X } from '@/components/icons';
+import { ChevronDown, ChevronUp, ImagePlus, Pause, Play, X } from '@/components/icons';
 import {
   addLookRef,
   approvePlan,
-  approvePlates,
-  makePlates,
   removeLookRef,
   setBrollModel,
   setFxIntensity,
@@ -14,7 +13,11 @@ import {
   setLook,
   setLookEverywhere,
   setLookPrompt,
+  setRange,
+  SNIPPET_LENGTHS,
+  snippetRange,
   toggleBrollKeep,
+  videoRange,
 } from '@/engine/actions';
 import { estimateBudget } from '@/engine/agent';
 import { formatTime } from '@/engine/director';
@@ -24,6 +27,7 @@ import { useApp } from '@/engine/store';
 import type { BrollModel, FxIntensity, FxPackId, LocationKind, Look, Project, Section } from '@/engine/types';
 import { haptic } from '@/lib/haptics';
 import { pickImage } from '@/media/pick';
+import { useSongPreview } from '@/media/preview';
 import { color, radius, space, type } from '@/theme/tokens';
 
 import { Button } from '../Button';
@@ -39,14 +43,16 @@ import { JobBar, StageScreen, WrappedNote, stageStyles } from './StageChrome';
 
 const LOOK_OPTIONS: { value: LocationKind | 'custom'; label: string }[] = [...LOCATIONS.map((l) => ({ value: l.id, label: l.title })), { value: 'custom', label: 'Custom' }];
 
-/** Stage 4: the plan. Where every part of the song takes place, plus the b-roll and effects that go with it. */
+/** Stage 2: the plan, locked before the shoot. How long the video is, where every part takes place, b-roll and effects. */
 export function LooksStage({ project }: { project: Project }) {
   const apply = useApp((s) => s.apply);
-  const sections = project.song?.sections ?? [];
+  const range = videoRange(project);
+  // Only the parts of the song inside the video get a look.
+  const sections = (project.song?.sections ?? []).filter((s) => s.end > range.start + 0.01 && s.start < range.end - 0.01);
   const [openId, setOpenId] = useState<string | null>(sections[0]?.id ?? null);
   const working = project.job?.stage === 'looks';
-  // Looks can change until the reference frames are approved.
-  const open = project.plates !== 'approved' && !project.job && project.shots.length === 0;
+  // Looks can change until the switch starts.
+  const open = project.plates === 'none' && !project.job && project.shots.length === 0;
   const ready = sections.length > 0 && sections.every((s) => project.looks[s.id]);
   const budget = estimateBudget(project);
   const ideas = project.broll.ideas;
@@ -59,28 +65,33 @@ export function LooksStage({ project }: { project: Project }) {
       footer={
         working ? (
           <JobBar project={project} />
-        ) : project.plates === 'approved' ? (
-          <WrappedNote text="Looks are locked in. Tap Looks on the slate to go back and change them." />
-        ) : !project.cut.locked ? (
-          <WrappedNote text="The plan opens once the cut is locked." />
-        ) : !project.planApproved ? (
+        ) : project.planApproved ? (
+          <WrappedNote text={open ? "The plan is locked. You can still change looks, b-roll and effects until the switch starts." : 'The plan is locked. Tap Plan on the slate to go back and change it.'} />
+        ) : (
           <>
-            <Button label="Run it" disabled={!ready} onPress={() => apply(project.id, approvePlan)} accessibilityHint="The director builds references, switches every shot, adds b-roll and builds the edit" />
+            <Button
+              label="Lock the plan"
+              disabled={!ready}
+              onPress={() => {
+                haptic.confirm();
+                apply(project.id, approvePlan);
+                // Back to the studio, where the shoot starts.
+                router.replace(`/project/${project.id}`);
+              }}
+              accessibilityHint="Then you record. After the shoot the director cuts, switches, adds b-roll and builds the edit"
+            />
             <T v="caption" c="ash" style={styles.center}>
-              {budget.totalCredits ? `About ${budget.totalCredits.toLocaleString()} Beeble credits to render at ${project.switchSettings.resolution}p.` : 'Change anything first. Nothing renders until you run it.'}
+              Next you record. Nothing renders until the shoot is done.
             </T>
           </>
-        ) : project.plates === 'ready' ? (
-          <Button label="Approve references" onPress={() => apply(project.id, approvePlates)} />
-        ) : (
-          <Button label="Make reference frames" onPress={() => apply(project.id, makePlates)} />
         )
       }>
-      <T v="body" c="smoke">
-        Each part of the song gets a world. SwitchX rebuilds everything around you from the prompt and up to {project.switchSettings.maxRefs} reference {project.switchSettings.maxRefs === 1 ? 'image' : 'images'}; your performance stays exactly as you shot it.
-      </T>
+      <LengthPicker project={project} />
 
       <View style={stageStyles.block}>
+        <SectionTitle detail={`SwitchX rebuilds the world around you from the prompt and up to ${project.switchSettings.maxRefs} reference ${project.switchSettings.maxRefs === 1 ? 'image' : 'images'}. Your performance stays exactly as you shot it.`}>
+          Where each part takes place
+        </SectionTitle>
         {sections.map((section) => {
           const look = project.looks[section.id];
           if (!look) return null;
@@ -171,6 +182,69 @@ export function LooksStage({ project }: { project: Project }) {
         </View>
       ) : null}
     </StageScreen>
+  );
+}
+
+/** Full song or a snippet, and where the snippet starts. */
+function LengthPicker({ project }: { project: Project }) {
+  const apply = useApp((s) => s.apply);
+  const song = project.song;
+  const range = videoRange(project);
+  const preview = useSongPreview(song, { stopAt: range.end });
+  if (!song) return null;
+  const locked = project.planApproved || !!project.job;
+  const full = !project.range;
+  const length = range.end - range.start;
+  const lengthKey = full ? 'full' : String(SNIPPET_LENGTHS.reduce((best, s) => (Math.abs(s - length) < Math.abs(best - length) ? s : best), SNIPPET_LENGTHS[0]));
+  const hook = song.sections.find((s) => s.kind === 'hook');
+  const starts = song.sections.filter((s, i, all) => all.findIndex((x) => x.label === s.label && Math.abs(x.start - s.start) < 0.01) === i);
+  const inSnippet = preview.playing && preview.time >= range.start && preview.time <= range.end;
+
+  const pickLength = (key: string) => {
+    preview.pause();
+    if (key === 'full') return apply(project.id, (p) => setRange(p, undefined));
+    const start = project.range?.start ?? hook?.start ?? 0;
+    apply(project.id, (p) => setRange(p, snippetRange(song, start, Number(key))));
+  };
+  const pickStart = (start: number) => {
+    preview.pause();
+    apply(project.id, (p) => setRange(p, snippetRange(song, start, length)));
+  };
+
+  return (
+    <View style={stageStyles.block}>
+      <SectionTitle detail={full ? `The whole song, ${formatTime(song.durationSec)}.` : `${formatTime(range.start)} to ${formatTime(range.end)} of the song. Only this part gets shot, switched and edited.`}>
+        How long
+      </SectionTitle>
+      <Chips<string>
+        label="Video length"
+        value={lengthKey}
+        disabled={locked}
+        onChange={pickLength}
+        options={[{ value: 'full', label: 'Full song', detail: formatTime(song.durationSec) }, ...SNIPPET_LENGTHS.map((s) => ({ value: String(s), label: `${s} sec`, detail: 'Snippet' }))]}
+      />
+      {!full ? (
+        <>
+          <T v="micro" c="smoke">
+            Starts at
+          </T>
+          <Chips<number>
+            label="Snippet starts at"
+            value={starts.find((s) => Math.abs(s.start - range.start) < 0.05)?.start}
+            disabled={locked}
+            onChange={pickStart}
+            options={starts.map((s) => ({ value: s.start, label: s.label, detail: formatTime(s.start) }))}
+          />
+          <Press
+            onPress={() => (inSnippet ? preview.pause() : preview.play(range.start))}
+            style={styles.listen}
+            accessibilityLabel={inSnippet ? 'Pause the snippet' : 'Play the snippet'}>
+            {inSnippet ? <Pause size={18} color={color.chalk} /> : <Play size={18} color={color.chalk} />}
+            <T v="callout">{inSnippet ? `Playing, ${formatTime(preview.time - range.start)} of ${formatTime(length)}` : 'Hear the snippet'}</T>
+          </Press>
+        </>
+      ) : null}
+    </View>
   );
 }
 
@@ -271,6 +345,17 @@ function LookCard({ section, look, editable, expanded, maxRefs, onToggle, onLoca
 const styles = StyleSheet.create({
   center: {
     textAlign: 'center',
+  },
+  listen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.s,
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    paddingHorizontal: space.l,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.hairlineStrong,
   },
   tabular: {
     fontVariant: ['tabular-nums'],

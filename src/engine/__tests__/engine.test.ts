@@ -16,6 +16,7 @@ import {
   failJob,
   finishJob,
   finishShooting,
+  lockCut,
   lockEdit,
   MIN_SHOT_SEC,
   redoShot,
@@ -25,12 +26,16 @@ import {
   setAutonomy,
   setJobProgress,
   setLook,
+  setRange,
   setResolution,
   setSwitchSettings,
   settle,
+  snippetRange,
   startSwitch,
   switchProgress,
   updateShot,
+  updateSong,
+  videoRange,
 } from '../actions';
 import { agentAct, applyCommand, estimateBudget, parseCommands, respond, runAgent, settleAuto } from '../agent';
 import { nextActions } from '../director';
@@ -58,9 +63,11 @@ function shot(p: Project): Project {
   return next;
 }
 
-/** A project stopped at the plan, the first place autopilot waits for the artist. */
+/** A project with the plan locked, the takes in and the cut locked: the switch is next. */
 function planned(): Project {
-  return settleAuto(finishShooting(shot(fresh())));
+  let p = setAutonomy(approvePlan(fresh()), 'ask');
+  p = lockCut(settle(finishShooting(shot(p))));
+  return { ...p, autonomy: 'auto' };
 }
 
 describe('song', () => {
@@ -79,15 +86,26 @@ describe('song', () => {
     expect(started.job?.stage).toBe('song');
     expect(currentStage(started)?.id).toBe('song');
     const p = settle(started);
-    expect(currentStage(p)?.id).toBe('shoot');
-    expect(nextActions(p).primary).toEqual({ label: 'Start recording', open: 'record' });
-    expect(p.messages.at(-1)?.attachment).toBe('takePlan');
+    expect(currentStage(p)?.id).toBe('looks');
+    expect(nextActions(p).primary).toEqual({ label: 'Lock the plan', run: 'approvePlan' });
+    expect(p.messages.at(-1)?.attachment).toBe('plan');
+    const locked = approvePlan(p);
+    expect(currentStage(locked)?.id).toBe('shoot');
+    expect(nextActions(locked).primary).toEqual({ label: 'Start recording', open: 'record' });
+    expect(locked.messages.at(-1)?.attachment).toBe('takePlan');
   });
 
   it('skips the mapping job for a track that arrives already analyzed', () => {
     const p = createProject({ song: { ...mud(), analyzed: true, source: 'import' }, vibe: 'Trap', formats: ['9:16'] });
     expect(p.job).toBeUndefined();
-    expect(currentStage(p)?.id).toBe('shoot');
+    expect(currentStage(p)?.id).toBe('looks');
+  });
+
+  it('picks the effects pack from the tempo when nobody picks a vibe', () => {
+    const p = createProject({ song: { ...mud(), analyzed: true }, formats: ['16:9'] });
+    expect(p.vibe).toBe('Trap');
+    expect(p.fx.pack).toBe('trapHype');
+    expect(createProject({ song: { ...songFromDemo(DEMO_TRACKS[1]), analyzed: true }, formats: ['16:9'] }).vibe).toBe('Boom bap');
   });
 });
 
@@ -168,28 +186,68 @@ describe('cut', () => {
     expect(p.messages.some((m) => /no take on it/.test(m.text))).toBe(true);
   });
 
-  it('shuffles into a different cut until the plan runs', () => {
+  it('shuffles into a different cut until the switch starts', () => {
     const p = planned();
     const shuffled = reshuffleCut(p);
     expect(shuffled.cut.seed).toBe(1);
     expect(shuffled.cut.segments.map((s) => s.end - s.start)).not.toEqual(p.cut.segments.map((s) => s.end - s.start));
-    const running = approvePlan(p);
+    const running = runAgent(p);
+    expect(running.job).toBeDefined();
     expect(reshuffleCut(running)).toBe(running);
   });
 });
 
+describe('snippets', () => {
+  it('rounds a snippet to whole bars and keeps it inside the song', () => {
+    const song = mud();
+    const bar = barSec(song.bpm);
+    const r = snippetRange(song, song.sections[2].start, 15);
+    expect(r.start).toBe(song.sections[2].start);
+    expect(offGrid((r.end - r.start) / bar)).toBeCloseTo(0, 2);
+    expect(Math.abs(r.end - r.start - 15)).toBeLessThan(bar);
+    const late = snippetRange(song, song.durationSec - 2, 30);
+    expect(late.end).toBeCloseTo(song.durationSec, 3);
+    expect(late.end - late.start).toBeGreaterThan(25);
+  });
+
+  it('cuts, covers and pitches b-roll only inside the snippet', () => {
+    let p = fresh();
+    const hook = p.song!.sections.find((s) => s.kind === 'hook')!;
+    p = setRange(p, snippetRange(p.song!, hook.start, 30));
+    const r = videoRange(p);
+    expect(p.broll.ideas.every((i) => i.at === undefined || (i.at >= r.start && i.at + i.durationSec <= r.end + 0.01))).toBe(true);
+    p = approvePlan(p);
+    expect(setRange(p, undefined)).toBe(p);
+    p = addTake(p, { source: 'record', fromSec: 0, durationSec: p.song!.durationSec });
+    expect(coverage(p)).toBe(1);
+    p = lockCut(settle(finishShooting(setAutonomy(p, 'ask'))));
+    expect(p.cut.segments[0].start).toBeCloseTo(r.start, 3);
+    expect(p.cut.segments.at(-1)!.end).toBeCloseTo(r.end, 3);
+    for (const s of p.cut.segments) expect(s.start >= r.start - 0.001 && s.end <= r.end + 0.001).toBe(true);
+  });
+});
+
 describe('plan', () => {
-  it('pitches looks, b-roll and effects, then waits for the artist', () => {
-    const p = planned();
+  it('pitches looks, b-roll and effects before the shoot, then waits for the artist', () => {
+    const p = fresh();
     expect(currentStage(p)?.id).toBe('looks');
-    expect(stageStatus(p, 'looks')).toBe('needs_you');
-    expect(p.cut.locked).toBe(true);
+    expect(stageStatus(p, 'looks')).toBe('current');
+    expect(p.takes).toHaveLength(0);
     expect(Object.keys(p.looks)).toHaveLength(p.song!.sections.length);
     expect(p.broll.ideas.length).toBe(3);
     expect(p.fx.pack).toBe('drill');
     expect(p.messages.at(-1)?.attachment).toBe('plan');
-    expect(nextActions(p).primary).toEqual({ label: 'Run it', run: 'approvePlan' });
+    expect(nextActions(p).primary).toEqual({ label: 'Lock the plan', run: 'approvePlan' });
     expect(agentAct(p)).toBeNull();
+  });
+
+  it('re-pitches the plan when the song gets new parts', () => {
+    const p = approvePlan(fresh());
+    const song = { ...p.song!, sections: [{ id: 'part-a', kind: 'verse' as const, label: 'Verse 1', start: 0, end: p.song!.durationSec }] };
+    const next = updateSong(p, { song, formats: p.formats });
+    expect(Object.keys(next.looks)).toEqual(['part-a']);
+    expect(next.planApproved).toBe(false);
+    expect(currentStage(next)?.id).toBe('looks');
   });
 
   it('places b-roll inside verses and the outro, on the bar grid', () => {
@@ -250,8 +308,12 @@ describe('switch', () => {
     }
   });
 
-  it('renders five at a time', () => {
-    let p = runAgent(settle(runAgent(approvePlan(planned()))));
+  it('builds reference frames, then renders five at a time', () => {
+    let p = runAgent(planned());
+    expect(p.job?.stage).toBe('looks');
+    expect(stageStatus(p, 'switch')).toBe('working');
+    for (let i = 0; i < 100 && p.job?.stage === 'looks'; i++) p = advance(p, 250);
+    expect(p.plates).toBe('approved');
     expect(p.job?.stage).toBe('switch');
     let peak = 0;
     for (let i = 0; i < 400 && p.job; i++) {
@@ -312,7 +374,7 @@ describe('autopilot', () => {
   });
 
   it('asks before every step when autopilot is off', () => {
-    let p = setAutonomy(fresh(), 'ask');
+    let p = setAutonomy(approvePlan(fresh()), 'ask');
     p = settleAuto(finishShooting(shot(p)));
     expect(currentStage(p)?.id).toBe('cut');
     expect(stageStatus(p, 'cut')).toBe('needs_you');
@@ -369,13 +431,16 @@ describe('talking to the director', () => {
 describe('going back', () => {
   it('reopens looks and clears everything built on them', () => {
     let p = settleAuto(approveAllShots(settleAuto(approvePlan(planned()))));
+    const takes = p.takes.length;
     p = revisit(p, 'looks');
     expect(currentStage(p)?.id).toBe('looks');
     expect(p.planApproved).toBe(false);
     expect(p.plates).toBe('none');
     expect(p.shots).toHaveLength(0);
     expect(p.final.builds).toBe(0);
-    expect(p.cut.locked).toBe(true);
+    expect(p.cut.locked).toBe(false);
+    expect(p.shootLocked).toBe(false);
+    expect(p.takes).toHaveLength(takes);
   });
 
   it('cuts again right away when the artist reopens the cut', () => {

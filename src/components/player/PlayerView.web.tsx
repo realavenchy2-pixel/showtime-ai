@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Pause, Play } from '@/components/icons';
+import { videoRange } from '@/engine/actions';
 import { formatTime } from '@/engine/director';
 import { songPeaks, songUrl } from '@/media/audio.web';
 import { buildComposition } from '@/media/composition';
@@ -119,7 +120,7 @@ export function PlayerView({ project, effects, soloTakeId, format, label, cue, m
           </View>
         ) : null}
         <View style={styles.time} pointerEvents="none">
-          <T v="micro" c="chalk">{`${formatTime(state.time)} / ${formatTime(state.duration || song?.durationSec || 0)}`}</T>
+          <T v="micro" c="chalk">{`${formatTime(Math.max(0, state.time - videoRange(project).start))} / ${formatTime(videoRange(project).end - videoRange(project).start)}`}</T>
         </View>
       </View>
       <Timeline project={project} time={state.time} peaks={peaks} onSeek={(t) => playerRef.current?.seek(t)} />
