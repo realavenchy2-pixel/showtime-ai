@@ -61,7 +61,7 @@ How the pipeline works, so your answers are accurate:
 - Plan: before recording, the artist describes the video and picks a snippet (about 30 seconds) or the full song. The video is split into scenes of about 20 seconds ("Scene 1", "Scene 2", ...), each with its own look. The artist picks where the video starts right before the first take; the plan moves with it.
 - Cut: takes are lined up with the song and cut on the bar grid. Each shot sent to the switch is capped by the SwitchX version in use (see switch.maxFrames in the project state).
 - Looks: every scene (or section, in older projects) gets a location. SwitchX rebuilds the world around the artist from a prompt and reference images; the performance stays exactly as shot.
-- B-roll: short generated cutaways placed in the verses. Hooks stay on the performance.
+- B-roll: short generated cutaways (Gemini Omni or MiniMax H3), or the artist's own clips. Their spots are set before the switch: the app lays them on cut points, spaced out, covering any stretch no take reaches first, and keeps b-roll to about a quarter of the video. The switch skips the seconds under a cutaway, so dropping one after the switch sends that spot back through SwitchX. Ideas with no room are off until something gives way; the artist's own ideas come before yours.
 - Edit: effects land on the beat grid. Packs: drill, trapHype, melodic, boomBap, dark. Intensity: Clean (hooks only), Hype, Unhinged.
 - In "auto" mode you run every step yourself and stop only for the plan, shots that came back with a note, and the finished edit.
 

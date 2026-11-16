@@ -278,6 +278,11 @@ const BROLL_BY_VIBE: Record<Vibe, string[]> = {
   ],
 };
 
+/** Cutaway shots that fit a vibe, for when the director needs one of its own. */
+export function brollShots(vibe: Vibe | undefined): string[] {
+  return BROLL_BY_VIBE[vibe ?? 'Trap'];
+}
+
 /** B-roll the director pitches: lyric-matched for the demo songs, vibe-matched otherwise. */
 export function pitchBroll(song: Song, vibe: Vibe | undefined, model: BrollIdea['model'] = 'omni'): BrollIdea[] {
   const bar = barSec(song.bpm);

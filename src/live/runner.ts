@@ -1,4 +1,5 @@
 import { failJob, finishJob, setJobProgress, switchProgress, updateBroll, updateShot } from '@/engine/actions';
+import { brollPrompt } from '@/engine/broll';
 import type { Project } from '@/engine/types';
 import { mediaBlob, saveMedia } from '@/media/library';
 
@@ -147,7 +148,8 @@ export async function runBroll(host: RunnerHost, cfg: ServerConfig, projectId: s
   const alive = () => get()?.job?.id === jobId;
   const p0 = get();
   if (!p0) return;
-  const ideas = p0.broll.ideas.filter((i) => i.keep && i.status === 'idea' && !i.clipId);
+  // Only cutaways with a place in the video: anything else would be paid for and never shown.
+  const ideas = p0.broll.ideas.filter((i) => i.keep && i.status === 'idea' && !i.clipId && i.at !== undefined);
   const aspect = p0.formats.includes('16:9') || p0.formats.length === 0 ? '16:9' : p0.formats[0];
   let finished = 0;
   const failures: string[] = [];
@@ -155,7 +157,7 @@ export async function runBroll(host: RunnerHost, cfg: ServerConfig, projectId: s
   await pool(ideas, 2, async (idea) => {
     if (!alive()) return;
     try {
-      let job = await startBroll(cfg, { model: idea.model, prompt: idea.shot, durationSec: idea.durationSec, aspect });
+      let job = await startBroll(cfg, { model: idea.model, prompt: brollPrompt(p0, idea), durationSec: idea.durationSec, aspect });
       if (job.status !== 'ready') {
         const id = job.id;
         const done = await waitFor(() => brollStatus(cfg, id), alive, () => undefined, pollMs);

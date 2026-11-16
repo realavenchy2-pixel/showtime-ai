@@ -16,6 +16,7 @@ npm run export:web  # when a change touches web-only files or app.json
 
 - `src/engine` has no UI imports. Project state changes only through the pure transitions in `actions.ts`; screens call `useApp().apply(id, fn)` with one of them.
 - Every transition that finishes a stage posts a director message, and `withIntro` posts the next stage's intro. Keep the director's voice: plain, confident, one idea per message.
+- B-roll is organized before the switch, in `broll.ts`. `arrangeBroll` lays kept cutaways on the cut (gaps covered first, the artist's ideas before the director's, spaced out, about a quarter of the video at most); `buildShots` sends only on-screen performance to SwitchX; `missingShots` switches a spot whose cutaway was dropped or failed. Call `arrangeBroll` after any change to the cut, the range or the ideas.
 - Provider limits live in `switchx.ts` and mirror Beeble SwitchX; a live project takes its limits from the server (`connectLive`). Don't change them without checking the provider.
 - The director acts only through `AgentCommand` (`agent.ts`). The server's Claude tool mirrors that list; a server test fails if they drift.
 - Add or update a test in `src/engine/__tests__` for any engine change.

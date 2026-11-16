@@ -51,7 +51,8 @@ export function SwitchStage({ project }: { project: Project }) {
   const section = shot ? project.song?.sections.find((s) => s.id === shot.sectionId) : undefined;
   const look = shot ? project.looks[shot.sectionId] : undefined;
   const working = project.job?.stage === 'switch';
-  const waiting = shots.filter((s) => s.status === 'ready' || s.status === 'failed').length;
+  const ready = shots.filter((s) => s.status === 'ready').length;
+  const failed = shots.filter((s) => s.status === 'failed');
   const editable = shots.length === 0 && !project.job;
   const totalCredits = shots.reduce((sum, s) => sum + switchCredits(s.frames, settings.resolution), 0);
 
@@ -70,14 +71,20 @@ export function SwitchStage({ project }: { project: Project }) {
         ) : status === 'done' ? (
           <WrappedNote text="Every shot is approved. Tap Switch on the slate to go back and redo it." />
         ) : shots.length === 0 ? (
-          <Button label="Start the switch" disabled={project.plates !== 'approved'} onPress={() => apply(project.id, (p) => startSwitch(p))} />
-        ) : waiting > 0 ? (
+          // Reference frames are built first, then the shots go up on their own.
+          <Button label="Start the switch" disabled={!project.cut.locked} onPress={() => apply(project.id, (p) => startSwitch(p))} />
+        ) : ready > 0 ? (
           <Button
-            label={waiting === 1 ? 'Approve the last shot' : `Approve all ${waiting} shots`}
+            label={ready === 1 ? (failed.length ? 'Approve the shot that’s back' : 'Approve the last shot') : `Approve all ${ready} shots`}
             onPress={() => {
               haptic.success();
               apply(project.id, approveAllShots);
             }}
+          />
+        ) : failed.length ? (
+          <Button
+            label={failed.length === 1 ? 'Redo the shot that failed' : `Redo the ${failed.length} shots that failed`}
+            onPress={() => apply(project.id, (p) => failed.reduce((acc, s) => redoShot(acc, s.id), p))}
           />
         ) : null
       }>
@@ -121,7 +128,9 @@ export function SwitchStage({ project }: { project: Project }) {
         </>
       ) : (
         <T v="body" c="smoke">
-          {project.plates === 'approved' ? 'Every shot in the cut goes through SwitchX with its section’s look. Check the settings, then start.' : 'The switch opens once the plan is running and the reference frames are in.'}
+          {project.cut.locked
+            ? 'Every shot on screen goes through SwitchX with its scene’s look. Reference frames come first. Seconds under b-roll are skipped.'
+            : 'The switch opens once the cut is locked.'}
         </T>
       )}
 

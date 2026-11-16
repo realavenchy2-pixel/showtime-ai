@@ -2,11 +2,10 @@ import { useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { Plus } from '@/components/icons';
-import { addBrollIdea, approveBroll, generateBroll, setBrollModel, skipStage, toggleBrollKeep } from '@/engine/actions';
-import { formatTime } from '@/engine/director';
+import { addBrollIdea, approveBroll, brollToMake, generateBroll, setBrollModel, skipStage } from '@/engine/actions';
 import { stageStatus } from '@/engine/stages';
 import { useApp } from '@/engine/store';
-import type { BrollIdea, BrollModel, Project } from '@/engine/types';
+import type { BrollModel, Project } from '@/engine/types';
 import { haptic } from '@/lib/haptics';
 import { color, radius, space, type } from '@/theme/tokens';
 
@@ -16,12 +15,10 @@ import { PlayerView } from '../player/PlayerView';
 import { Press } from '../Press';
 import { SectionTitle } from '../Screen';
 import { T } from '../T';
-import { Toggle } from '../Toggle';
+import { CutawayRow, cutawaySummary, orderedCutaways } from './Cutaways';
 import { JobBar, StageScreen, WrappedNote, stageStyles } from './StageChrome';
 
-const STATE: Record<BrollIdea['status'], string> = { idea: 'In the plan', clip: 'Back, ready to check', approved: 'In the edit' };
-
-/** Stage 6: cutaways. The director pitches them from the lyrics; the artist keeps, drops or adds their own. */
+/** Stage 6: cutaways. Their spots were set before the switch; here they get made, checked, kept or dropped. */
 export function BrollStage({ project }: { project: Project }) {
   const apply = useApp((s) => s.apply);
   const [text, setText] = useState('');
@@ -30,7 +27,8 @@ export function BrollStage({ project }: { project: Project }) {
   const ideas = project.broll.ideas;
   const working = project.job?.stage === 'broll';
   const wrapped = project.broll.approved || status === 'skipped';
-  const toMake = ideas.filter((i) => i.keep && i.status === 'idea').length;
+  const toMake = brollToMake(project);
+  const own = ideas.some((i) => i.keep && i.clipId && i.status === 'idea');
   const back = ideas.some((i) => i.status === 'clip');
   const model = ideas.find((i) => i.status === 'idea')?.model ?? ideas[0]?.model ?? 'omni';
   const current = status === 'current' || status === 'needs_you';
@@ -56,38 +54,37 @@ export function BrollStage({ project }: { project: Project }) {
           <Button label="Keep these clips" onPress={() => apply(project.id, approveBroll)} />
         ) : current ? (
           <>
-            <Button label={toMake === 1 ? 'Generate 1 clip' : `Generate ${toMake} clips`} disabled={toMake === 0} onPress={() => apply(project.id, (p) => generateBroll(p))} />
+            <Button
+              label={toMake === 0 && own ? 'Use your clips' : toMake === 1 ? 'Generate 1 clip' : `Generate ${toMake} clips`}
+              disabled={toMake === 0 && !own}
+              onPress={() => apply(project.id, (p) => generateBroll(p))}
+            />
             <Button label="Skip b-roll" variant="quiet" onPress={() => apply(project.id, (p) => skipStage(p, 'broll'))} />
           </>
         ) : (
-          <WrappedNote text="These generate after the switch. Keep, drop or add ideas any time before then." />
+          <WrappedNote text="These generate after the switch. Their spots are set now, so the switch skips those seconds." />
         )
       }>
       {ideas.some((i) => i.status !== 'idea') ? <PlayerView project={project} effects={false} cue={cue} label="Cut with b-roll" /> : null}
 
       <View style={stageStyles.block}>
-        <SectionTitle detail="Each one cuts in for a couple of bars, then back to you.">Cutaways</SectionTitle>
-        {ideas.map((idea) => (
-          <Press
+        <SectionTitle detail={`${cutawaySummary(project)} Dropping one after the switch sends that spot back to the switch.`}>Cutaways</SectionTitle>
+        {orderedCutaways(project).map((idea) => (
+          <CutawayRow
             key={idea.id}
-            scaleTo={0.99}
-            disabled={idea.status === 'idea' || idea.at === undefined}
-            onPress={() => setCue((c) => ({ time: Math.max(0, idea.at! - 1), key: (c?.key ?? 0) + 1, play: true, until: idea.at! + idea.durationSec + 1 }))}
-            style={styles.row}
-            accessibilityLabel={`${idea.shot}, ${STATE[idea.status]}`}>
-            <View style={stageStyles.flex}>
-              <T v="micro" c="smoke" numberOfLines={1}>
-                {`${idea.at !== undefined ? `${formatTime(idea.at)}, ` : ''}${idea.lyric}`}
-              </T>
-              <T v="callout">{idea.shot}</T>
-              <T v="caption" c={idea.status === 'clip' ? 'accent' : 'ash'}>{`${STATE[idea.status]}, ${Math.round(idea.durationSec)} s, ${idea.model === 'omni' ? 'Gemini Omni' : 'MiniMax H3'}`}</T>
-            </View>
-            <Toggle value={idea.keep} onChange={() => apply(project.id, (p) => toggleBrollKeep(p, idea.id))} label={`Keep b-roll: ${idea.shot}`} disabled={wrapped || working} />
-          </Press>
+            project={project}
+            idea={idea}
+            disabled={wrapped || working}
+            onPlay={
+              idea.status === 'idea' || idea.at === undefined
+                ? undefined
+                : () => setCue((c) => ({ time: Math.max(0, idea.at! - 1), key: (c?.key ?? 0) + 1, play: true, until: idea.at! + idea.durationSec + 1 }))
+            }
+          />
         ))}
         {ideas.length === 0 ? (
           <T v="body" c="smoke">
-            No cutaways yet. I pitch some once the cut is done, or add your own below.
+            No cutaways yet. Describe some in the plan, upload clips, or add your own below.
           </T>
         ) : null}
       </View>
@@ -127,16 +124,6 @@ export function BrollStage({ project }: { project: Project }) {
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.m,
-    padding: space.m,
-    borderRadius: radius.m,
-    backgroundColor: color.curtain,
-    borderWidth: 1,
-    borderColor: color.hairline,
-  },
   addRow: {
     flexDirection: 'row',
     gap: space.s,

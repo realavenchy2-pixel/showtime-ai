@@ -5,6 +5,7 @@ import {
   addUserMessage,
   approveAllShots,
   approveBroll,
+  brollToMake,
   approveCleanShots,
   approvePlan,
   buildEdit,
@@ -26,6 +27,7 @@ import {
   startSwitch,
   toggleEffect,
 } from './actions';
+import { buildShots } from './broll';
 import { nextActions, STAGE_WORD } from './director';
 import { FX_EFFECTS, FX_PACKS } from './fx';
 import { routeIdea } from './ideas';
@@ -56,7 +58,7 @@ export function agentAct(p: Project): Project | null {
     }
     case 'broll': {
       if (p.broll.ideas.some((i) => i.status === 'clip')) return moved(approveBroll(p));
-      if (p.broll.ideas.some((i) => i.keep && i.status === 'idea')) return moved(generateBroll(p));
+      if (brollToMake(p) || p.broll.ideas.some((i) => i.keep && i.clipId && i.status === 'idea')) return moved(generateBroll(p));
       return moved(skipStage(p, 'broll'));
     }
     case 'edit':
@@ -376,18 +378,15 @@ export function estimateBudget(p: Project): Budget {
       credits += switchCredits(s.frames, p.switchSettings.resolution);
     }
   } else {
-    const takes = new Map(p.takes.map((t) => [t.id, t]));
-    for (const seg of p.cut.segments) {
-      const take = takes.get(seg.takeId);
-      if (!take) continue;
-      const frames = Math.ceil((seg.end - seg.start) * take.fps);
-      switchFrames += frames;
-      credits += switchCredits(frames, p.switchSettings.resolution);
+    // Before the switch: the shots it would send, which skip the seconds under planned cutaways.
+    for (const s of buildShots(p)) {
+      switchFrames += s.frames;
+      credits += switchCredits(s.frames, p.switchSettings.resolution);
     }
   }
   const looks = new Set(Object.values(p.looks).map((l) => `${l.location}:${l.prompt}`));
   const referenceCredits = looks.size * REFERENCE_CREDITS;
-  const kept = p.broll.ideas.filter((i) => i.keep && !i.clipId);
+  const kept = p.broll.ideas.filter((i) => i.keep && i.at !== undefined && !i.clipId);
   const brollSeconds = kept.reduce((sum, i) => sum + Math.ceil(i.durationSec), 0);
   const brollCredits = kept.reduce((sum, i) => sum + Math.ceil(i.durationSec) * BROLL_CREDITS_PER_SEC[i.model], 0);
   return { switchFrames, switchCredits: credits, referenceCredits, brollSeconds, brollCredits, totalCredits: credits + referenceCredits + brollCredits };

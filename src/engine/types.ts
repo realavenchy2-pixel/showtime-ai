@@ -179,6 +179,8 @@ export interface Shot {
   alphaUrl?: string;
   renderMediaId?: string;
   error?: string;
+  /** Switched after the b-roll: performance for a cutaway that was dropped or didn't render. */
+  fill?: boolean;
 }
 
 export type BrollStatus = 'idea' | 'clip' | 'approved';
@@ -196,6 +198,12 @@ export interface BrollIdea {
   status: BrollStatus;
   keep: boolean;
   fromInbox?: boolean;
+  /** The artist asked for this one (typed it, described it in the plan, or uploaded the clip). */
+  mine?: boolean;
+  /** Covers a stretch no take reaches, so the video never goes black there. */
+  cover?: boolean;
+  /** Turned off because the video had no room for it, not by the artist. Comes back when there is room. */
+  bumped?: boolean;
   model: BrollModel;
   /** One of the artist's own uploaded clips instead of a generated one. */
   clipId?: string;

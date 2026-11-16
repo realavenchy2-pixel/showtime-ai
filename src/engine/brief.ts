@@ -88,8 +88,12 @@ export function planFromBrief(p: Project, input: string): Project {
     });
   }
 
-  const added = cutaways.slice(0, 3);
-  for (const shot of added) next = addBrollIdea(next, capitalize(shot));
+  // What the artist described replaces the director's generic pitches. "A Lambo pulls up and a money
+  // counter" is two cutaways, not one.
+  const shots = cutaways.flatMap((c) => c.split(/\s+(?:and|plus|with)\s+(?=(?:a|an|the|some|my)?\s*\w)/i).filter((x) => BROLL_THINGS.test(` ${x.toLowerCase()} `))).slice(0, 4);
+  const added = shots.length ? shots : cutaways.slice(0, 3);
+  if (added.length) next = { ...next, broll: { ...next.broll, ideas: next.broll.ideas.filter((i) => i.mine || i.fromInbox || i.clipId || i.status !== 'idea') } };
+  for (const shot of added) next = addBrollIdea(next, capitalize(shot.trim()));
 
   const lower = ` ${brief.toLowerCase()} `;
   const pack = PACK_HINTS.find(([re]) => re.test(lower))?.[1];
@@ -103,7 +107,8 @@ function describePlan(p: Project, sceneIds: string[], cutaways: number): string 
   for (const id of sceneIds) {
     const look = p.looks[id];
     if (!look) continue;
-    const word = look.location === 'custom' ? 'your world' : locationTitle(look.location).toLowerCase();
+    const place = look.location === 'custom' ? CUSTOM_PLACE.exec(` ${look.prompt.toLowerCase()} `)?.[1] : undefined;
+    const word = look.location === 'custom' ? (place ? `the ${place}` : 'your world') : locationTitle(look.location).toLowerCase();
     if (places[places.length - 1] !== word) places.push(word);
   }
   const where =

@@ -12,7 +12,6 @@ import {
   setLook,
   setLookEverywhere,
   setLookPrompt,
-  toggleBrollKeep,
   videoRange,
 } from '@/engine/actions';
 import { estimateBudget } from '@/engine/agent';
@@ -30,11 +29,11 @@ import { Chips } from '../Chips';
 import { Frame } from '../Frame';
 import { MediaImage } from '../MediaImage';
 import { PlanBrief, usePlanLock } from '../PlanBrief';
+import { CutawayRow, cutawaySummary, orderedCutaways } from './Cutaways';
 import { Press } from '../Press';
 import { SectionTitle } from '../Screen';
 import { T } from '../T';
 import { showToast } from '../Toast';
-import { Toggle } from '../Toggle';
 import { JobBar, StageScreen, WrappedNote, stageStyles } from './StageChrome';
 
 const LOOK_OPTIONS: { value: LocationKind | 'custom'; label: string }[] = [...LOCATIONS.map((l) => ({ value: l.id, label: l.title })), { value: 'custom', label: 'Custom' }];
@@ -139,15 +138,9 @@ export function LooksStage({ project }: { project: Project }) {
 
       {ideas.length ? (
         <View style={stageStyles.block}>
-          <SectionTitle detail="Cutaways between your takes. The performance carries the video.">B-roll</SectionTitle>
-          {ideas.map((idea) => (
-            <View key={idea.id} style={styles.row}>
-              <View style={stageStyles.flex}>
-                <T v="callout">{idea.shot}</T>
-                <T v="caption" c="smoke">{`${idea.at !== undefined ? `At ${formatTime(rel(idea.at))}, ` : ''}${Math.round(idea.durationSec)} s`}</T>
-              </View>
-              <Toggle value={idea.keep} onChange={() => apply(project.id, (p) => toggleBrollKeep(p, idea.id))} label={`Keep b-roll: ${idea.shot}`} disabled={project.broll.approved || idea.status !== 'idea'} />
-            </View>
+          <SectionTitle detail={`${cutawaySummary(project)} Spots move to cut points once your takes are in.`}>B-roll</SectionTitle>
+          {orderedCutaways(project).map((idea) => (
+            <CutawayRow key={idea.id} project={project} idea={idea} disabled={idea.status !== 'idea'} />
           ))}
           <Chips<BrollModel>
             label="B-roll model"

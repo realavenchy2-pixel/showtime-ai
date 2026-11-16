@@ -183,9 +183,11 @@ describe('cut', () => {
     p = settleAuto(finishShooting(p));
     const gaps = p.cut.segments.filter((s) => !s.takeId);
     expect(gaps.length).toBeGreaterThan(0);
-    expect(gaps[0].start).toBeCloseTo(30, 1);
+    // The take leaves on the last beat it covers, not mid-beat.
+    expect(gaps[0].start).toBeLessThanOrEqual(30);
+    expect(gaps[0].start).toBeGreaterThan(30 - 60 / p.song!.bpm - 0.01);
     expect(p.cut.segments.filter((s) => s.takeId).every((s) => s.end <= 30.01)).toBe(true);
-    expect(p.messages.some((m) => /no take on it/.test(m.text))).toBe(true);
+    expect(p.messages.some((m) => /have no take on them, so b-roll covers that stretch/.test(m.text))).toBe(true);
   });
 
   it('shuffles into a different cut until the switch starts', () => {
@@ -387,12 +389,12 @@ describe('plan', () => {
     expect(currentStage(next)?.id).toBe('looks');
   });
 
-  it('places b-roll inside verses and the outro, on the bar grid', () => {
+  it('places b-roll off the hooks, on the bar grid', () => {
     const p = planned();
     const bar = barSec(p.song!.bpm);
-    for (const idea of p.broll.ideas) {
+    for (const idea of p.broll.ideas.filter((i) => i.keep)) {
       const section = p.song!.sections.find((s) => s.id === idea.sectionId)!;
-      expect(section.kind === 'verse' || section.kind === 'outro').toBe(true);
+      expect(section.kind).not.toBe('hook');
       expect(offGrid(idea.at! / bar)).toBeCloseTo(0, 2);
       expect(idea.durationSec).toBeGreaterThanOrEqual(3);
     }
@@ -627,7 +629,10 @@ describe('money', () => {
   it('prices the render in Beeble credits', () => {
     const p = planned();
     const b = estimateBudget(p);
-    expect(b.switchFrames).toBeGreaterThan(1900);
+    // Seconds under planned b-roll never go to the switch.
+    const cutFrames = p.cut.segments.filter((s) => s.takeId).reduce((sum, s) => sum + (s.end - s.start) * 24, 0);
+    expect(b.switchFrames).toBeGreaterThan(1500);
+    expect(b.switchFrames).toBeLessThan(cutFrames);
     expect(b.switchCredits).toBeGreaterThanOrEqual(Math.ceil(b.switchFrames / 30) * 6);
     expect(b.referenceCredits).toBe(4 * 5);
     expect(b.brollCredits).toBeGreaterThan(0);
@@ -714,6 +719,11 @@ describe('live jobs', () => {
     p = runAgent(switchProgress(p));
     expect(p.skipped).toContain('broll');
     expect(p.messages.some((m) => /B-roll isn't set up/.test(m.text))).toBe(true);
+    // The seconds saved for b-roll go back through the switch, then the edit.
+    expect(p.job?.stage).toBe('switch');
+    expect(p.shots.some((s) => s.fill)).toBe(true);
+    for (const s of p.shots.filter((x) => x.fill)) p = updateShot(p, s.id, { status: 'ready', progress: 1 });
+    p = runAgent(switchProgress(p));
     expect(currentStage(p)?.id).toBe('edit');
   });
 

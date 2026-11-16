@@ -56,6 +56,8 @@ Keep the checklist current. A session can end without warning.
 - [x] Artist-first front half: no genre pick (effects pack defaults by tempo), the stage checklist scrolls
 - [x] No verse or hook: the director lays the video out in ~20-second scenes on whole bars (`scenesFor`, `Section.scene`)
 - [x] Plan box before the shoot: "Describe what you want to shoot" plus Snippet (about 30 seconds) or Full video. `lockPlan` reads the words into scenes, cutaways and a pack (`planFromBrief`); with the studio server, Claude plans it (`task: 'plan'`, `setLook` with `custom` and a prompt)
+- [x] B-roll organized for the switch (`src/engine/broll.ts`): cutaways placed on cut points before the switch, never back to back, at most ~25% of the video, stretches no take reaches covered first (in cutaway-length pieces), the artist's own clips and plan cutaways ahead of the director's pitches. The switch skips seconds under b-roll; a cutaway dropped or failed after the switch sends that spot back through SwitchX (`missingShots`, `Shot.fill`). Generated cutaways are prompted with the scene's light and color (`brollPrompt`)
+- [x] The cut moves take edges to the beat and never leaves a sub-second flash or a black hole when another take covers it
 - [x] Start point right before recording: slide along the song while it plays and let go, or hit Start here. The first take places the video (`placeVideo`); later takes stay inside it
 - [ ] First run with real keys: `npm run server:doctor`, then one short switch
 - [ ] Offline export (every frame, any device speed), generated reference frames, Select/custom mattes, native live switch

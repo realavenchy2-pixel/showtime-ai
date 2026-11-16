@@ -1,3 +1,4 @@
+import { arrangeBroll, buildShots, cutawaySec, missingShots } from './broll';
 import { formatTime, jobResult, stageIntro, takeLine } from './director';
 import { emptyEffects, planForPack } from './fx';
 import {
@@ -9,7 +10,7 @@ import {
   withScenes,
 } from './samples';
 import { canSkip, currentStage, STAGE_BY_ID, STAGES } from './stages';
-import { framesFor, HANDLE_SEC, maxShotSec, RECORD_FPS, SWITCHX } from './switchx';
+import { HANDLE_SEC, maxShotSec, RECORD_FPS, SWITCHX } from './switchx';
 import type {
   Autonomy,
   BrollIdea,
@@ -37,6 +38,8 @@ import type {
   Vibe,
   VideoLength,
 } from './types';
+
+export { buildShots } from './broll';
 
 // Pure project transitions. Every function returns a new project and never mutates its input.
 // The store calls these; tests call them directly.
@@ -144,9 +147,6 @@ function placeVideo(p: Project, start: number): Project {
   if (!song || !p.length || p.takes.length > 0) return p;
   const range = rangeFor(song, start, p.length);
   if (JSON.stringify(range) === JSON.stringify(p.range)) return p;
-  const old = videoRange(p);
-  const span = range ?? { start: 0, end: song.durationSec };
-  const shift = span.start - old.start;
   const scened = song.sections.some((s) => s.scene);
   const placed = scened ? withScenes(song, range) : song;
   let looks = p.looks;
@@ -164,18 +164,8 @@ function placeVideo(p: Project, start: number): Project {
       }),
     );
   }
-  const ideas = p.broll.ideas.flatMap((idea) => {
-    if (idea.at === undefined) return [idea];
-    let at = round(idea.at + shift);
-    if (at < span.start - 0.01 || at + idea.durationSec > span.end + 0.01) {
-      // The director's own pitches can go; the artist's ideas stay, moved inside the video.
-      if (!idea.fromInbox) return [];
-      at = round(clamp(at, span.start, Math.max(span.start, span.end - idea.durationSec)));
-    }
-    const section = placed.sections.find((s) => at >= s.start - 1e-6 && at < s.end - 1e-6);
-    return [{ ...idea, at, sectionId: section?.id }];
-  });
-  return { ...p, range, song: placed, looks, broll: { ...p.broll, ideas } };
+  // Cutaways are laid out again inside the new range, in the same order.
+  return arrangeBroll({ ...p, range, song: placed, looks });
 }
 
 function placementLine(p: Project): string {
@@ -206,7 +196,7 @@ export function pitchPlan(p: Project): Project {
   const inside = (i: BrollIdea) => i.at === undefined || (i.at >= range.start - 0.01 && i.at + i.durationSec <= range.end + 0.01);
   const ideas = p.broll.ideas.some((i) => !i.fromInbox) ? p.broll.ideas : [...pitchBroll(song, vibe).filter(inside), ...inbox];
   const fx = p.fx.pack ? p.fx : planForPack(VIBE_PACK[vibe], p.fx.intensity);
-  return { ...p, vibe, looks, broll: { ...p.broll, ideas }, fx };
+  return arrangeBroll({ ...p, vibe, looks, broll: { ...p.broll, ideas }, fx });
 }
 
 function startJob(p: Project, stage: StageId, label: string, durationMs: number, external = false): Project {
@@ -460,12 +450,26 @@ export function removeTake(p: Project, takeId: string): Project {
 
 export function addClip(p: Project, input: Omit<Clip, 'id'>): Project {
   const clip: Clip = { ...input, id: uid('clip') };
-  const next: Project = { ...p, clips: [...p.clips, clip] };
-  return post(next, 'director', `"${clip.label}" has no song in it, so I can't line it up as a take. I'll keep it as a cutaway.`, { stage: 'shoot' });
+  // The artist's own footage is the best b-roll there is: free, and it looks like their world.
+  const idea: BrollIdea = {
+    id: uid('broll'),
+    lyric: 'Your clip',
+    shot: clip.label,
+    clipId: clip.id,
+    durationSec: round(Math.min(clip.durationSec, p.song ? cutawaySec(p.song.bpm) : 3)),
+    status: 'idea',
+    keep: true,
+    mine: true,
+    model: p.broll.ideas[0]?.model ?? 'omni',
+  };
+  let next: Project = { ...p, clips: [...p.clips, clip], broll: p.broll.approved ? p.broll : { ...p.broll, ideas: [...p.broll.ideas, idea] } };
+  next = arrangeBroll(next, idea.id);
+  return post(next, 'director', `"${clip.label}" has no song in it, so I can't line it up as a take. It's a cutaway now.`, { stage: 'shoot' });
 }
 
 export function removeClip(p: Project, clipId: string): Project {
-  return { ...p, clips: p.clips.filter((c) => c.id !== clipId) };
+  const ideas = p.broll.approved ? p.broll.ideas : p.broll.ideas.filter((i) => i.clipId !== clipId);
+  return arrangeBroll({ ...p, clips: p.clips.filter((c) => c.id !== clipId), broll: { ...p.broll, ideas } });
 }
 
 /** How much of the song at least one take covers, 0 to 1. */
@@ -511,13 +515,13 @@ const RHYTHMS: [number, number][] = [
   [4, 1],
 ];
 
-/** Nothing shorter than this goes to the switch or into the cut on its own. */
+/** A take that starts or stops inside a shot never leaves a piece shorter than this. */
 export const MIN_SHOT_SEC = 1;
 
 /**
  * Cuts the song on the bar grid and picks a take for every shot.
  * Hooks cut faster and favor the low angle; a take is never used twice in a row when another one covers the shot.
- * Parts of the song that no take covers come back with an empty takeId.
+ * Parts of the song that no take covers come back with an empty takeId; b-roll covers them.
  */
 export function buildCut(p: Project, seed = p.cut.seed): CutSegment[] {
   const song = p.song;
@@ -531,6 +535,10 @@ export function buildCut(p: Project, seed = p.cut.seed): CutSegment[] {
   /** When each take was last on screen, so the cut rotates through all of them. */
   const lastUsed = new Map<string, number>();
 
+  const beat = 60 / song.bpm;
+  const beatUp = (x: number) => round(song.downbeatSec + Math.ceil((x - song.downbeatSec) / beat - 1e-6) * beat);
+  const beatDown = (x: number) => round(song.downbeatSec + Math.floor((x - song.downbeatSec) / beat + 1e-6) * beat);
+
   const range = videoRange(p);
   for (const whole of song.sections) {
     // Only the part of the song the video covers gets cut.
@@ -543,12 +551,23 @@ export function buildCut(p: Project, seed = p.cut.seed): CutSegment[] {
       let end = Math.min(section.end, t + length);
       // Fold a short tail into the last shot instead of leaving a sliver.
       if (section.end - end < bar * 0.5 && section.end - t <= longest) end = section.end;
+      // Where a take starts or stops inside a shot, the cut moves to the beat: in on the next beat,
+      // out on the last one it covers, and never so close to the shot's edge that it leaves a flash.
+      // When nothing else covers the other side, it's a gap for b-roll, so the take keeps every beat it has.
+      const covers = (from: number, to: number, not: Take) => p.takes.some((o) => o !== not && o.start <= from + 0.05 && o.end >= to - 0.05);
       const edges = [t, end];
       for (const take of p.takes) {
-        if (take.start > t + 0.25 && take.start < end - 0.25) edges.push(take.start);
-        if (take.end > t + 0.25 && take.end < end - 0.25) edges.push(take.end);
+        if (take.start > t + 0.05 && take.start < end - 0.05) {
+          const e = beatUp(covers(t, take.start, take) ? Math.max(take.start, t + MIN_SHOT_SEC) : take.start);
+          if (e <= end - MIN_SHOT_SEC + 1e-6) edges.push(e);
+        }
+        if (take.end > t + 0.05 && take.end < end - 0.05) {
+          const e = beatDown(covers(take.end, end, take) ? Math.min(take.end, end - MIN_SHOT_SEC) : take.end);
+          if (e >= t + MIN_SHOT_SEC - 1e-6) edges.push(e);
+        }
       }
       edges.sort((a, b) => a - b);
+      for (let k = edges.length - 1; k > 0; k--) if (edges[k] - edges[k - 1] < 0.05) edges.splice(k, 1);
       for (let i = 0; i < edges.length - 1; i++) {
         const from = edges[i];
         const to = edges[i + 1];
@@ -564,8 +583,7 @@ export function buildCut(p: Project, seed = p.cut.seed): CutSegment[] {
         const pick =
           signature ??
           (fresh.length ? fresh : pool).slice().sort((a, b) => waited(a) - waited(b) || rank(a) - rank(b) || a.n - b.n)[0];
-        // A piece too short to be a shot on its own is left uncovered instead of becoming a sliver.
-        const takeId = to - from >= MIN_SHOT_SEC ? (pick?.id ?? '') : '';
+        const takeId = pick?.id ?? '';
         const last = segments[segments.length - 1];
         if (last && !takeId && !last.takeId && last.sectionId === section.id) {
           last.end = round(to);
@@ -603,20 +621,23 @@ export function swapSegmentTake(p: Project, segmentId: string, takeId: string): 
   const seg = p.cut.segments.find((s) => s.id === segmentId);
   const take = p.takes.find((t) => t.id === takeId);
   if (!seg || !take || take.start > seg.start + 0.05 || take.end < seg.end - 0.05) return p;
-  return { ...p, cut: { ...p.cut, segments: p.cut.segments.map((s) => (s.id === segmentId ? { ...s, takeId } : s)) } };
+  return arrangeBroll({ ...p, cut: { ...p.cut, segments: p.cut.segments.map((s) => (s.id === segmentId ? { ...s, takeId } : s)) } });
 }
 
 /** Same takes, a different cut: new rhythm and a new order of angles. */
 export function reshuffleCut(p: Project): Project {
   if (!planOpen(p) || p.cut.segments.length === 0) return p;
   const seed = p.cut.seed + 1;
-  const next: Project = { ...p, cut: { ...p.cut, seed, segments: buildCut(p, seed) } };
+  const next: Project = arrangeBroll({ ...p, cut: { ...p.cut, seed, segments: buildCut(p, seed) } });
   return post(next, 'director', `Shuffled. ${cutLine(next)}`, { stage: 'cut' });
 }
 
 export function cutLine(p: Project): string {
   const shots = p.cut.segments.filter((s) => s.takeId).length;
   const [verseBars, hookBars] = RHYTHMS[Math.abs(p.cut.seed) % RHYTHMS.length];
+  const range = videoRange(p);
+  const hooks = p.song?.sections.some((s) => s.kind === 'hook' && s.end > range.start && s.start < range.end);
+  if (!hooks) return `${shots} shots, a new one every ${verseBars === 1 ? 'bar' : `${verseBars} bars`}.`;
   return `${shots} shots: hooks cut every ${hookBars === 1 ? 'bar' : `${hookBars} bars`}, verses every ${verseBars}.`;
 }
 
@@ -702,50 +723,6 @@ export function approvePlates(p: Project): Project {
 
 // ---------- Switch ----------
 
-/**
- * One switch job per run of the cut: neighboring shots from the same take in the same section
- * go up together, with handles, and never longer than the provider takes in one generation.
- */
-export function buildShots(p: Project, maxFrames: number = p.switchSettings.maxFrames): Shot[] {
-  const takes = new Map(p.takes.map((t) => [t.id, t]));
-  const runs: { takeId: string; sectionId: string; start: number; end: number }[] = [];
-  for (const seg of p.cut.segments) {
-    const take = takes.get(seg.takeId);
-    if (!take) continue;
-    const limit = maxFrames / take.fps - 2 * HANDLE_SEC;
-    const last = runs[runs.length - 1];
-    if (last && last.takeId === seg.takeId && last.sectionId === seg.sectionId && Math.abs(last.end - seg.start) < 0.01 && seg.end - last.start <= limit) {
-      last.end = seg.end;
-    } else {
-      runs.push({ takeId: seg.takeId, sectionId: seg.sectionId, start: seg.start, end: seg.end });
-    }
-  }
-  return runs.map((run, i) => {
-    const take = takes.get(run.takeId)!;
-    const start = Math.max(take.start, run.start - HANDLE_SEC);
-    let end = Math.min(take.end, run.end + HANDLE_SEC);
-    let frames = framesFor(start, end, take.fps);
-    if (frames > maxFrames) {
-      frames = maxFrames;
-      end = start + frames / take.fps;
-    }
-    return {
-      id: uid('shot'),
-      n: i + 1,
-      sectionId: run.sectionId,
-      takeId: run.takeId,
-      start: round(start),
-      end: round(end),
-      frames,
-      fps: take.fps,
-      status: 'queued',
-      progress: 0,
-      workMs: 900 + ((i * 337) % 700),
-      pendingFlag: !p.isSample && take.source !== 'sample' ? undefined : i === 3 ? 'Hand blur on the mic, check the edge' : i === 11 ? 'Flicker in the hair outline' : undefined,
-    };
-  });
-}
-
 export function startSwitch(p: Project, opts: { external?: boolean } = {}): Project {
   // Reference frames come first; the switch starts on its own when they are in.
   if (p.plates === 'none' && !p.job && p.shots.length === 0 && p.cut.locked) return makePlates(p);
@@ -814,12 +791,17 @@ export function skipStage(p: Project, stage: StageId): Project {
   const before = p;
   let next: Project = { ...p, skipped: [...p.skipped, stage] };
   next = post(next, 'system', `Skipped ${STAGE_BY_ID[stage].title}.`);
-  return withIntro(before, next);
+  // Skipping b-roll after the switch: the spots saved for cutaways need the performance back.
+  return stage === 'broll' && next.shots.length ? fillIn(before, next) : withIntro(before, next);
 }
 
+/** Turns a cutaway on or off. On always finds it a place, even if a director pitch has to give way. */
 export function toggleBrollKeep(p: Project, ideaId: string): Project {
-  if (p.broll.approved) return p;
-  return { ...p, broll: { ...p.broll, ideas: p.broll.ideas.map((i) => (i.id === ideaId ? { ...i, keep: !i.keep } : i)) } };
+  const idea = p.broll.ideas.find((i) => i.id === ideaId);
+  if (p.broll.approved || !idea || idea.cover) return p;
+  const on = !idea.keep;
+  const ideas = p.broll.ideas.map((i) => (i.id === ideaId ? { ...i, keep: on, bumped: undefined } : i));
+  return arrangeBroll({ ...p, broll: { ...p.broll, ideas } }, on ? ideaId : undefined);
 }
 
 export function setBrollModel(p: Project, model: BrollModel): Project {
@@ -830,41 +812,28 @@ export function setBrollModel(p: Project, model: BrollModel): Project {
 export function addBrollIdea(p: Project, shot: string, fromInbox = false): Project {
   if (p.broll.approved) return p;
   const song = p.song;
-  const bar = song ? barSec(song.bpm) : 2;
-  const model = p.broll.ideas[0]?.model ?? 'omni';
-  // Put it on the first verse bar that has no cutaway yet.
-  let at: number | undefined;
-  let sectionId: string | undefined;
-  if (song) {
-    const taken = p.broll.ideas.map((i) => i.at ?? -1);
-    outer: for (const s of song.sections.filter((x) => x.kind === 'verse' || x.kind === 'hook')) {
-      for (let t = s.start + 2 * bar; t < s.end - 2 * bar; t += 4 * bar) {
-        if (!taken.some((x) => Math.abs(x - t) < 2 * bar)) {
-          at = round(t);
-          sectionId = s.id;
-          break outer;
-        }
-      }
-    }
-  }
   const idea: BrollIdea = {
     id: uid('broll'),
     lyric: fromInbox ? 'From your idea inbox' : 'Your idea',
     shot,
-    sectionId,
-    at,
-    durationSec: round(Math.max(3, bar * 2)),
+    durationSec: song ? cutawaySec(song.bpm) : 3,
     status: 'idea',
     keep: true,
     fromInbox: fromInbox || undefined,
-    model,
+    mine: true,
+    model: p.broll.ideas[0]?.model ?? 'omni',
   };
-  return { ...p, broll: { ...p.broll, ideas: [...p.broll.ideas, idea] } };
+  // The artist's idea gets a place; a director pitch gives way if the video is full.
+  return arrangeBroll({ ...p, broll: { ...p.broll, ideas: [...p.broll.ideas, idea] } }, idea.id);
 }
 
 export function generateBroll(p: Project, opts: { external?: boolean } = {}): Project {
-  const count = p.broll.ideas.filter((i) => i.keep && i.status === 'idea').length;
-  if (count === 0 || p.job || p.broll.approved) return p;
+  if (p.job || p.broll.approved) return p;
+  // The artist's own clips are already shot: they're back the moment b-roll starts.
+  const own = p.broll.ideas.some((i) => i.keep && i.clipId && i.status === 'idea');
+  if (own) p = { ...p, broll: { ...p.broll, ideas: p.broll.ideas.map((i) => (i.keep && i.clipId && i.status === 'idea' ? { ...i, status: 'clip' as const } : i)) } };
+  const count = brollToMake(p);
+  if (count === 0) return own ? post(p, 'director', 'Your clips are in place. Check them, then keep them.', { stage: 'broll' }) : p;
   if (p.pipeline === 'live' && !liveStage(p, 'broll')) {
     const noted = post(p, 'director', "B-roll isn't set up on your studio server yet, so I'm cutting without it.", { stage: 'broll' });
     return skipStage(noted, 'broll');
@@ -876,10 +845,36 @@ export function updateBroll(p: Project, ideaId: string, patch: Partial<Pick<Brol
   return { ...p, broll: { ...p.broll, ideas: p.broll.ideas.map((i) => (i.id === ideaId ? { ...i, ...patch } : i)) } };
 }
 
+/** Cutaways that still need generating: kept, with a place in the video, not the artist's own clip. */
+export function brollToMake(p: Project): number {
+  return p.broll.ideas.filter((i) => i.keep && i.status === 'idea' && i.at !== undefined && !i.clipId).length;
+}
+
 export function approveBroll(p: Project): Project {
   if (!p.broll.ideas.some((i) => i.status === 'clip') || p.broll.approved) return p;
-  const ideas = p.broll.ideas.map((i) => (i.status === 'clip' && i.keep ? { ...i, status: 'approved' as const } : i));
-  return withIntro(p, { ...p, broll: { ideas, approved: true } });
+  // A cutaway that never got made can't go in the edit: its spot goes back to the performance.
+  const ideas = p.broll.ideas.map((i) =>
+    i.status === 'clip' && i.keep ? { ...i, status: 'approved' as const } : i.status === 'idea' && i.keep ? { ...i, keep: false, at: undefined, sectionId: undefined } : i,
+  );
+  return fillIn(p, { ...p, broll: { ideas, approved: true } });
+}
+
+/**
+ * After the b-roll: any stretch of performance a planned cutaway was meant to cover, and now
+ * doesn't (dropped, failed, skipped), goes through the switch so the video has no holes.
+ */
+function fillIn(before: Project, p: Project): Project {
+  const extra = missingShots(p);
+  if (extra.length === 0 || p.job) return withIntro(before, p);
+  const seconds = Math.round(extra.reduce((sum, s) => sum + (s.end - s.start), 0));
+  let next: Project = { ...p, shots: [...p.shots, ...extra] };
+  next = post(
+    next,
+    'director',
+    `${extra.length === 1 ? 'One spot' : `${extra.length} spots`} I'd saved for b-roll ${extra.length === 1 ? 'is' : 'are'} back on you, so I'm switching those ${seconds} ${seconds === 1 ? 'second' : 'seconds'} of your take now.`,
+    { stage: 'switch' },
+  );
+  return startJob(next, 'switch', `Switching ${extra.length} more ${extra.length === 1 ? 'shot' : 'shots'}`, 0, liveStage(p, 'switch'));
 }
 
 // ---------- Edit ----------
@@ -1008,7 +1003,8 @@ function completeJob(p: Project, job: Job): Project {
       if (next.song) next = { ...next, song: { ...next.song, analyzed: true } };
       break;
     case 'cut':
-      next = { ...next, cut: { ...next.cut, segments: buildCut(next), locked: false } };
+      // B-roll lands on the new cut right away: gaps covered, cutaways on cut points.
+      next = arrangeBroll({ ...next, cut: { ...next.cut, segments: buildCut(next), locked: false } });
       break;
     case 'looks': {
       next = post({ ...next, plates: 'approved' }, 'director', jobResult(next, 'looks')?.text ?? 'Reference frames are in.', { stage: 'switch' });
@@ -1018,7 +1014,8 @@ function completeJob(p: Project, job: Job): Project {
       // A redo pass reports on itself; the first full pass gets the director's summary below.
       const redo = next.shots.some((s) => s.status === 'approved');
       if (redo) {
-        next = post(next, 'director', 'Redo is back. Check it, then approve.', { stage: 'switch' });
+        const filled = next.shots.some((s) => s.fill && s.status === 'ready');
+        next = post(next, 'director', filled ? 'The shots for the spots without b-roll are back. Check them, then approve.' : 'Redo is back. Check it, then approve.', { stage: 'switch' });
         return withIntro(p, next);
       }
       break;

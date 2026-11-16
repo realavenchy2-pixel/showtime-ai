@@ -1,3 +1,4 @@
+import { buildShots, skippedSeconds } from './broll';
 import { locationTitle } from './samples';
 import { currentStage, stageStatus } from './stages';
 import { SWITCHX } from './switchx';
@@ -54,7 +55,7 @@ export function nextActions(p: Project): ActionSet {
     }
     case 'broll': {
       if (status === 'needs_you') return { primary: { label: 'Review b-roll', open: 'broll' } };
-      const n = p.broll.ideas.filter((i) => i.keep && i.status === 'idea').length;
+      const n = p.broll.ideas.filter((i) => i.keep && i.status === 'idea' && i.at !== undefined).length;
       return {
         primary: n ? { label: n === 1 ? 'Generate 1 clip' : `Generate ${n} clips`, run: 'generateBroll' } : { label: 'Pick b-roll', open: 'broll' },
         secondary: { label: 'Skip b-roll', run: 'skip' },
@@ -90,13 +91,15 @@ export function stageIntro(p: Project, id: StageId): { text: string; attachment?
         attachment: 'plan',
       };
     case 'switch': {
-      const shots = p.cut.segments.filter((s) => s.takeId).length;
+      const shots = buildShots(p).length;
+      const skipped = skippedSeconds(p);
+      const saved = skipped >= 1 ? ` The ${Math.round(skipped)} seconds under b-roll are skipped, so you only pay for what's on screen.` : ' Only the seconds on screen get rendered.';
       return {
-        text: `Cut's locked. Reference frames first, then ${shots === 1 ? 'the shot goes' : `${shots} shots go`} through SwitchX, ${SWITCHX.concurrency} at a time. Only the seconds on screen get rendered.`,
+        text: `Cut's locked. Reference frames first, then your performance goes through SwitchX in ${shots === 1 ? 'one shot' : `${shots} shots`}, ${SWITCHX.concurrency} at a time.${saved}`,
       };
     }
     case 'broll': {
-      const n = p.broll.ideas.filter((i) => i.keep).length;
+      const n = p.broll.ideas.filter((i) => i.keep && i.at !== undefined).length;
       return { text: n ? `The switch is done. ${n} b-roll ${n === 1 ? 'cutaway is' : 'cutaways are'} next.` : 'The switch is done. No b-roll in the plan, so the edit is next.' };
     }
     case 'edit':
@@ -119,7 +122,7 @@ export function jobResult(p: Project, stage: StageId): { text: string; attachmen
     case 'cut': {
       const shots = p.cut.segments.filter((s) => s.takeId).length;
       const gaps = p.cut.segments.filter((s) => !s.takeId).reduce((sum, s) => sum + (s.end - s.start), 0);
-      const hole = gaps > 1 ? ` ${formatTime(gaps)} of the song has no take on it; I'll carry that part with b-roll and visuals unless you record more.` : '';
+      const hole = gaps > 1 ? ` ${Math.round(gaps)} seconds have no take on them, so b-roll covers that stretch. Record a take there to keep it on you.` : '';
       return { text: `Cut's done: ${shots} shots, all on the beat.${hole}`, attachment: 'cutSummary' };
     }
     case 'looks':
