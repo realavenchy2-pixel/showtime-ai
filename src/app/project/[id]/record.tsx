@@ -31,7 +31,8 @@ const DENIED = {
  */
 export default function RecordScreen() {
   useKeepAwake();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, scene: sceneParam } = useLocalSearchParams<{ id: string; scene?: string }>();
+  const sceneIndex = sceneParam !== undefined && sceneParam !== '' ? Number(sceneParam) : undefined;
   const project = useProject(id);
   const apply = useApp((s) => s.apply);
   const access = useCameraAccess();
@@ -47,7 +48,7 @@ export default function RecordScreen() {
   const player = useAudioPlayer(url, { updateInterval: 100 });
 
   const song = project?.song;
-  const range = useTakeRange(project);
+  const range = useTakeRange(project, sceneIndex);
   const { from, to } = range;
   const listenUntil = range.bounds.end;
   const n = project?.takes.length ?? 0;
@@ -182,6 +183,7 @@ export default function RecordScreen() {
           },
           current.from,
           false,
+          sceneIndex,
         ),
       );
       haptic.success();

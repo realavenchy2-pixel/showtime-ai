@@ -55,6 +55,11 @@ interface Props {
   onClose: () => void;
   /** The live camera picture, filling the screen. */
   children: ReactNode;
+  /** The scene this take is for, shown at the top. */
+  sceneLabel?: string;
+  /** The camera look on the viewfinder. Tapping it moves to the next one. */
+  lookLabel?: string;
+  onLook?: () => void;
 }
 
 const RING = 2 * Math.PI * 42;
@@ -88,7 +93,7 @@ function currentLines(lines: LyricLine[], t: number): { current?: LyricLine; nex
 
 /** Everything on top of the camera: the take, the count-in, the prompter, the song and the record button. */
 export function RecorderChrome(props: Props) {
-  const { phase, beat, song, songTime, from, to, takes, planned, placing, custom, video, peaks, blocked, listening, onFromTop, onStartAt, onScrub, onStartHere, onListen, onRecord, onStop, onFlip, onClose, children } = props;
+  const { phase, beat, song, songTime, from, to, takes, planned, placing, custom, video, peaks, blocked, listening, onFromTop, onStartAt, onScrub, onStartHere, onListen, onRecord, onStop, onFlip, onClose, children, sceneLabel, lookLabel, onLook } = props;
   const insets = useSafeAreaInsets();
   const [stripWidth, setStripWidth] = useState(0);
   const [sliding, setSliding] = useState(false);
@@ -154,7 +159,23 @@ export function RecorderChrome(props: Props) {
             <View style={styles.iconBtn} />
           )}
         </View>
-      </LinearGradient>
+              {sceneLabel || lookLabel ? (
+          <View style={styles.pills} pointerEvents="box-none">
+            {sceneLabel ? (
+              <View style={styles.topPill}>
+                <T v="micro" c="chalk">
+                  {sceneLabel}
+                </T>
+              </View>
+            ) : null}
+            {lookLabel ? (
+              <Press onPress={onLook} disabled={!onLook || recording} style={[styles.topPill, styles.lookPill]} accessibilityLabel={`Camera look: ${lookLabel}. Tap for the next camera`}>
+                <T v="micro" c="chalk">{`Camera · ${lookLabel}`}</T>
+              </Press>
+            ) : null}
+          </View>
+        ) : null}
+</LinearGradient>
 
       {phase === 'countin' ? (
         <View style={styles.centerFill} pointerEvents="none">
@@ -347,6 +368,9 @@ export function RecorderChrome(props: Props) {
 }
 
 const styles = StyleSheet.create({
+  pills: { flexDirection: 'row', justifyContent: 'center', gap: space.s, marginTop: space.s, flexWrap: 'wrap' },
+  topPill: { paddingHorizontal: space.m, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: 'rgba(0,0,0,0.55)' },
+  lookPill: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
   page: {
     flex: 1,
     backgroundColor: color.stage,

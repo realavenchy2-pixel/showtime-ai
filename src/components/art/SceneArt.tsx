@@ -19,7 +19,7 @@ interface Props {
   noArtist?: boolean;
 }
 
-const displayFont = Platform.select({ web: 'BigShouldersDisplay_900Black, "Arial Narrow", sans-serif', default: 'BigShouldersDisplay_900Black' });
+const displayFont = Platform.select({ web: 'Sora_800ExtraBold, Sora, sans-serif', default: 'Sora_800ExtraBold' });
 
 export function SceneArt({ kind, relit = kind !== 'room', behindText, noArtist }: Props) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');

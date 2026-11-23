@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { rangeFor, videoRange } from '@/engine/actions';
+import { scenesOf } from '@/engine/production';
 import type { Project } from '@/engine/types';
 
 /** Snaps a moment to the nearest beat, so a take starts where the music does. */
@@ -15,14 +16,22 @@ function onBeat(p: Project, t: number): number {
  * tap the song, or listen and hit "Start here". The first take places the video in the song
  * (a snippet runs about 30 seconds from there); later takes stay inside it.
  */
-export function useTakeRange(p: Project | undefined) {
+export function useTakeRange(p: Project | undefined, sceneIndex?: number) {
   const [startAt, setStartAt] = useState<number | undefined>();
   const song = p?.song;
   const placing = !!p && !!song && !!p.length && p.takes.length === 0;
-  const bounds = !p || !song ? { start: 0, end: 0 } : placing ? { start: 0, end: song.durationSec } : videoRange(p);
+  // Shooting one scene: the take covers that scene. Before the video is placed, scene 1 starts wherever the artist picks.
+  const scene = p && sceneIndex !== undefined ? scenesOf(p)[sceneIndex] : undefined;
+  const sceneLen = scene ? scene.section.end - scene.section.start : 0;
+  const bounds = !p || !song ? { start: 0, end: 0 } : placing ? { start: 0, end: song.durationSec } : scene ? { start: scene.section.start, end: scene.section.end } : videoRange(p);
   const latest = Math.max(bounds.start, bounds.end - 2);
   const from = Math.round(Math.max(bounds.start, Math.min(latest, startAt ?? bounds.start)) * 1000) / 1000;
-  const to = placing && p?.length && song ? (rangeFor(song, from, p.length)?.end ?? song.durationSec) : bounds.end;
+  const to =
+    placing && scene && song
+      ? Math.min(song.durationSec, from + sceneLen)
+      : placing && p?.length && song
+        ? (rangeFor(song, from, p.length)?.end ?? song.durationSec)
+        : bounds.end;
 
   const startFrom = (t: number) => {
     if (!p?.song) return;

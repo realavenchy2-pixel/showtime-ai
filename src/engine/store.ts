@@ -15,6 +15,8 @@ interface Saved {
   projects: Project[];
   credits: number;
   plan: PlanId;
+  /** The welcome and the examples have been seen once. */
+  seenWelcome?: boolean;
 }
 
 const KEY = 'showtime:v2';
@@ -24,6 +26,8 @@ interface AppState {
   order: string[];
   credits: number;
   plan: PlanId;
+  seenWelcome: boolean;
+  markWelcomed: () => void;
   createProject: (input: NewProjectInput) => string;
   removeProject: (id: string) => void;
   /** Applies a pure project transition from the engine, then lets the director carry on. */
@@ -59,7 +63,7 @@ function load(): Saved | undefined {
   }
 }
 
-function seed(): Pick<AppState, 'projects' | 'order' | 'credits' | 'plan'> {
+function seed(): Pick<AppState, 'projects' | 'order' | 'credits' | 'plan' | 'seenWelcome'> {
   const samples = buildSampleProjects();
   const saved = load();
   // A job that was rendering on this device when the app closed can't be resumed; simulated ones can.
@@ -70,6 +74,7 @@ function seed(): Pick<AppState, 'projects' | 'order' | 'credits' | 'plan'> {
     order: all.map((p) => p.id),
     credits: saved?.credits ?? 3,
     plan: saved?.plan ?? 'Free trial',
+    seenWelcome: !!saved?.seenWelcome,
   };
 }
 
@@ -123,6 +128,8 @@ export const useApp = create<AppState>((set, get) => ({
     return cost;
   },
 
+  markWelcomed: () => set({ seenWelcome: true }),
+
   addCredits: (n) => set((s) => ({ credits: s.credits + n })),
   setPlan: (plan) => set({ plan }),
 
@@ -151,6 +158,7 @@ useApp.subscribe((state) => {
       projects: state.order.map((id) => state.projects[id]).filter((p) => p && !p.isSample),
       credits: state.credits,
       plan: state.plan,
+      seenWelcome: state.seenWelcome,
     };
     try {
       storage()?.setItem(KEY, JSON.stringify(saved));

@@ -3,11 +3,12 @@ import { create } from 'zustand';
 import { addUserMessage, approvePlan, connectLive, resumeSwitch, setVideoLength } from '@/engine/actions';
 import { applyReply, replyLocally } from '@/engine/agent';
 import { lockPlan as lockPlanHere, planFromBrief } from '@/engine/brief';
+import { locationsToMake, setLocationImage } from '@/engine/production';
 import { useApp } from '@/engine/store';
 import { recentChat, summarize } from '@/engine/summary';
 import type { Project, VideoLength } from '@/engine/types';
 
-import { askDirector, cleanUrl, getCaps, sameOriginServer, savedServer, saveServer, StudioError, toLiveCaps, type ServerCaps, type ServerConfig } from './client';
+import { askDirector, cleanUrl, makeReference, getCaps, sameOriginServer, savedServer, saveServer, StudioError, toLiveCaps, type ServerCaps, type ServerConfig } from './client';
 import { pickUp, type RunnerHost } from './runner';
 
 // The app's connection to the studio server: whether one is connected, what it can run,
@@ -143,7 +144,25 @@ export function sendToDirector(projectId: string, input: string): void {
   askDirector(cfg, { project: summarize(now), history: recentChat(now).slice(0, -1), text })
     .then(({ reply, commands }) => useApp.getState().apply(projectId, (p) => applyReply(p, reply, commands)))
     .catch(() => useApp.getState().apply(projectId, (p) => replyLocally(p, text)))
-    .finally(() => setThinking(false));
+    .finally(() => {
+      setThinking(false);
+      makeLocations(projectId);
+    });
+}
+
+/**
+ * Has the studio server paint the empty location for every scene that doesn't have a picture yet.
+ * Without a server (or without an image key on it) the app shows drawn stand-ins.
+ */
+export function makeLocations(projectId: string): void {
+  const cfg = liveConfig();
+  const project = useApp.getState().projects[projectId];
+  if (!cfg || !project || project.pipeline !== 'live' || !project.live?.references) return;
+  for (const ref of locationsToMake(project)) {
+    makeReference(cfg, { prompt: ref.prompt ?? '', aspect: '16:9' })
+      .then(({ uri, dataUrl }) => useApp.getState().apply(projectId, (p) => setLocationImage(p, ref.id, { uri: dataUrl, remoteUri: uri })))
+      .catch(() => {});
+  }
 }
 
 /**
@@ -158,6 +177,7 @@ export function lockPlan(projectId: string, input: { brief: string; length: Vide
   if (!project || project.planApproved) return;
   if (!cfg || !directorIsLive(project) || !brief) {
     app.apply(projectId, (p) => lockPlanHere(p, input));
+    makeLocations(projectId);
     return;
   }
   app.apply(projectId, (p) => addUserMessage({ ...setVideoLength(p, input.length), brief }, brief));

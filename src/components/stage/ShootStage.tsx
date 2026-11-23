@@ -19,7 +19,9 @@ import { SectionTitle } from '../Screen';
 import { StageGlyph } from '../StageGlyph';
 import { T } from '../T';
 import { showToast } from '../Toast';
+import { SceneShoot } from './SceneShoot';
 import { JobBar, StageScreen, WrappedNote, stageStyles } from './StageChrome';
+import { allScenesLocked, nextScene } from '@/engine/production';
 
 /** Stage 2: every take and clip the director has to work with. */
 export function ShootStage({ project }: { project: Project }) {
@@ -29,6 +31,8 @@ export function ShootStage({ project }: { project: Project }) {
   const locked = project.shootLocked;
   const covered = coverage(project);
   const n = project.takes.length;
+  // Plans locked with set guides are shot scene by scene.
+  const byScene = !!project.guides?.length;
 
   const upload = async () => {
     if (importing) return;
@@ -61,6 +65,14 @@ export function ShootStage({ project }: { project: Project }) {
           <JobBar project={project} />
         ) : locked ? (
           <WrappedNote text="The shoot is wrapped. Tap Shoot on the slate to add more takes." />
+        ) : byScene ? (
+          allScenesLocked(project) ? (
+            <Button label="That's a wrap, cut it" onPress={wrap} />
+          ) : (
+            <T v="caption" c="ash" style={{ textAlign: 'center' }}>
+              {`Lock every scene to wrap. ${nextScene(project) ? `Up next: scene ${(nextScene(project)?.index ?? 0) + 1}.` : ''}`}
+            </T>
+          )
         ) : n >= 2 ? (
           <>
             <Button label="That's a wrap, cut it" onPress={wrap} />
@@ -73,7 +85,8 @@ export function ShootStage({ project }: { project: Project }) {
           </>
         )
       }>
-      <View style={stageStyles.block}>
+      {byScene ? <SceneShoot project={project} /> : null}
+      <View style={[stageStyles.block, byScene && { display: 'none' }]}>
         <SectionTitle detail={song ? coverageLine(project, covered) : undefined}>Takes</SectionTitle>
         {project.takes.map((t) => (
           <TakeRow key={t.id} take={t} locked={locked} onRemove={() => apply(project.id, (p) => removeTake(p, t.id))} />

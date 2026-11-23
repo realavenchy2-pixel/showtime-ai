@@ -9,6 +9,7 @@ import {
   suggestedLooks,
   withScenes,
 } from './samples';
+import { bestTake, pitchIdeas, prepareShoot, scenesOf, setPath } from './production';
 import { canSkip, currentStage, STAGE_BY_ID, STAGES } from './stages';
 import { HANDLE_SEC, maxShotSec, RECORD_FPS, SWITCHX } from './switchx';
 import type {
@@ -253,6 +254,10 @@ export interface NewProjectInput {
   pipeline?: Project['pipeline'];
   /** Where recording starts and stops. Leave it out for the whole song. */
   range?: { start: number; end: number };
+  /** Let AI direct, or work from the artist's own vision. */
+  path?: Project['path'];
+  /** With "Let AI direct": stop for the artist at every step. */
+  approveEachStep?: boolean;
 }
 
 export function formatName(f: Format): string {
@@ -263,8 +268,9 @@ export function formatName(f: Format): string {
 export function createProject(input: NewProjectInput): Project {
   let p = blankProject(input.song.title);
   p = { ...p, pipeline: input.pipeline ?? 'demo' };
+  if (input.path) p = setPath(p, input.path, input.approveEachStep);
   p = post(p, 'system', p.pipeline === 'live' ? LIVE_NOTE : DEMO_NOTE);
-  return setSong(p, input, true);
+  return pitchIdeas(setSong(p, input, true));
 }
 
 /** Stage 1 again, after going back: new track, vibe or formats. */
@@ -382,6 +388,8 @@ export interface NewTake {
   label?: string;
   angle?: TakeAngle;
   hookOnly?: boolean;
+  /** The scene this take was shot for. */
+  scene?: number;
 }
 
 export function addTake(p: Project, input: NewTake): Project {
@@ -413,6 +421,7 @@ export function addTake(p: Project, input: NewTake): Project {
     lagMs: Math.round(input.lagMs ?? 0),
     sync: input.sync ?? 'clock',
     flag: input.flag,
+    scene: input.scene,
   };
   let next: Project = { ...p, takes: [...p.takes, take] };
   next = post(next, 'director', takeLine(next, take), { stage: 'shoot' });
@@ -540,6 +549,12 @@ export function buildCut(p: Project, seed = p.cut.seed): CutSegment[] {
   const beatDown = (x: number) => round(song.downbeatSec + Math.floor((x - song.downbeatSec) / beat + 1e-6) * beat);
 
   const range = videoRange(p);
+  // Scenes shot one at a time: the AI editor's best take carries its scene.
+  const bestBySection = new Map<string, string>();
+  for (const scene of scenesOf(p)) {
+    const best = bestTake(p, scene.index);
+    if (best) bestBySection.set(scene.section.id, best.id);
+  }
   for (const whole of song.sections) {
     // Only the part of the song the video covers gets cut.
     const section = { ...whole, start: Math.max(whole.start, range.start), end: Math.min(whole.end, range.end) };
@@ -572,7 +587,9 @@ export function buildCut(p: Project, seed = p.cut.seed): CutSegment[] {
         const from = edges[i];
         const to = edges[i + 1];
         const hook = section.kind === 'hook';
-        const pool = p.takes.filter((take) => take.start <= from + 0.05 && take.end >= to - 0.05 && (hook || !take.hookOnly));
+        const covering = p.takes.filter((take) => take.start <= from + 0.05 && take.end >= to - 0.05 && (hook || !take.hookOnly));
+        const best = bestBySection.get(section.id);
+        const pool = best && covering.some((t) => t.id === best) ? covering.filter((t) => t.id === best || t.scene === undefined) : covering;
         const order = hook ? HOOK_ANGLES : VERSE_ANGLES;
         const rank = (take: Take) => (order.indexOf(take.angle) + (hook ? 0 : Math.abs(seed))) % order.length;
         // A take with a note on it still gets screen time, just less: it waits two extra turns.
@@ -702,7 +719,12 @@ export function approvePlan(p: Project): Project {
   const sections = p.song?.sections ?? [];
   if (p.planApproved || !p.song?.analyzed || !sections.every((s) => p.looks[s.id])) return p;
   const before = p;
-  const next = post({ ...p, planApproved: true }, 'director', "Plan's locked. You know what we're making; now let's get the takes.", { stage: 'looks' });
+  const next = post(
+    prepareShoot({ ...p, planApproved: true }),
+    'director',
+    "Plan's locked. I made the empty location for every scene, so you can see where you're going before you shoot, and a set guide for each one. We shoot one scene at a time.",
+    { stage: 'looks' },
+  );
   return withIntro(before, next);
 }
 

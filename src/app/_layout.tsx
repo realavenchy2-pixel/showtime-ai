@@ -55,6 +55,9 @@ export default function RootLayout() {
         <Stack.Screen name="project/[id]/record" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
         <Stack.Screen name="new" options={{ presentation: 'modal' }} />
         <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="welcome" options={{ animation: 'fade' }} />
+        <Stack.Screen name="examples" />
+        <Stack.Screen name="project/[id]/library" />
         <Stack.Screen name="tutorial/[stage]" options={{ presentation: 'modal' }} />
       </Stack>
       <ToastHost />

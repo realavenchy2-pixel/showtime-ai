@@ -103,7 +103,7 @@ export async function runSwitch(host: RunnerHost, cfg: ServerConfig, projectId: 
 
       const slot = await createUpload(cfg, clip.filename);
       await putFile(cfg, slot.uploadUrl, clip.blob, clip.contentType);
-      const refs = (await Promise.all(look.refs.slice(0, p.switchSettings.maxRefs).map((r) => uploadRef(r.mediaId)))).filter((x): x is string => !!x);
+      const refs = (await Promise.all(look.refs.slice(0, p.switchSettings.maxRefs).map((r) => (r.remoteUri ? Promise.resolve(r.remoteUri) : uploadRef(r.mediaId))))).filter((x): x is string => !!x);
       if (!alive()) return;
       report(shotId, { progress: 0.16 });
 

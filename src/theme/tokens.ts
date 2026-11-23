@@ -1,36 +1,38 @@
 import { Platform, type TextStyle } from 'react-native';
 
-// Showtime AI design tokens.
-// Look: a stage at night. True black so the video owns the screen, warm graphite surfaces,
-// chalk-white type, and one accent-amber accent that only ever marks "what to do now".
-// Headlines use Big Shoulders Display, drawn from Chicago street signage; everything you read
-// uses the phone's own system font.
+// Showtime AI design tokens, matched to the Figma file "Showtime AI — App Design".
+// Look: premium night. Near-black blue-grey surfaces so the video owns the screen, white type,
+// and one Showtime pink that only ever marks "what to do now".
+// Headlines use Sora; everything you read uses Inter.
 
 export const color = {
-  /** Base. True black, a deliberate OLED choice for a video app. */
-  stage: '#000000',
-  /** Sheets, the composer, the slate. */
-  curtain: '#121110',
-  /** Rows, bubbles, chips. */
-  flat: '#1C1A18',
-  /** Pressed states and strong borders. */
-  rig: '#2C2926',
-  hairline: 'rgba(242, 240, 236, 0.10)',
-  hairlineStrong: 'rgba(242, 240, 236, 0.18)',
+  /** Base (Figma bg/base). */
+  stage: '#07070A',
+  /** Sheets, the composer, the slate (bg/surface). */
+  curtain: '#0E0E13',
+  /** Rows, bubbles, chips (bg/raised). */
+  flat: '#15151C',
+  /** Pressed states and strong borders (bg/overlay). */
+  rig: '#1D1D26',
+  hairline: '#2B2B37',
+  hairlineStrong: '#3C3C4B',
   /** Primary text. */
-  chalk: '#F2F0EC',
+  chalk: '#FFFFFF',
   /** Secondary text. */
-  smoke: '#A9A49D',
+  smoke: '#A1A1B5',
   /** Tertiary text, disabled. */
-  ash: '#6F6A64',
+  ash: '#70708A',
   /** The accent: the one action to take, the stage you're on, progress. */
-  accent: '#FD1B55',
-  accentSoft: 'rgba(253, 27, 85, 0.16)',
+  accent: '#FA1A55',
+  accentSoft: 'rgba(250, 26, 85, 0.16)',
+  /** Accent as text on dark surfaces. */
+  accentText: '#FF4D78',
   /** Text on accent. */
   ink: '#FFFFFF',
   /** Recording only. */
-  rec: '#FF453A',
-  scrim: 'rgba(0, 0, 0, 0.55)',
+  rec: '#FF4757',
+  success: '#2FD58A',
+  scrim: 'rgba(0, 0, 0, 0.6)',
 } as const;
 
 export const space = { xs: 4, s: 8, m: 12, l: 16, xl: 24, xxl: 32 } as const;
@@ -43,32 +45,36 @@ export const radius = { s: 8, m: 14, l: 22, pill: 999 } as const;
 /** Content stays readable on wide screens and the web preview. */
 export const maxWidth = 560;
 
-function display(weight: 700 | 800 | 900): Pick<TextStyle, 'fontFamily' | 'fontWeight'> {
-  const name = weight === 900 ? 'BigShouldersDisplay_900Black' : weight === 800 ? 'BigShouldersDisplay_800ExtraBold' : 'BigShouldersDisplay_700Bold';
+function display(weight: 600 | 700 | 800): Pick<TextStyle, 'fontFamily' | 'fontWeight'> {
+  const name = weight === 800 ? 'Sora_800ExtraBold' : weight === 700 ? 'Sora_700Bold' : 'Sora_600SemiBold';
   // Native needs the exact loaded name. The web gets a fallback stack in case the font is slow.
   return Platform.select({
-    web: { fontFamily: `${name}, "Arial Narrow", "Roboto Condensed", system-ui, sans-serif`, fontWeight: String(weight) as TextStyle['fontWeight'] },
+    web: { fontFamily: `${name}, Sora, system-ui, sans-serif`, fontWeight: String(weight) as TextStyle['fontWeight'] },
     default: { fontFamily: name },
   });
 }
 
-const system = Platform.select({
-  web: { fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' },
-  default: {},
-});
+/** Body text in Inter. On native each weight is its own loaded family. */
+function inter(weight: 400 | 500 | 600): Pick<TextStyle, 'fontFamily' | 'fontWeight'> {
+  const name = weight === 600 ? 'Inter_600SemiBold' : weight === 500 ? 'Inter_500Medium' : 'Inter_400Regular';
+  return Platform.select({
+    web: { fontFamily: `${name}, Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`, fontWeight: String(weight) as TextStyle['fontWeight'] },
+    default: { fontFamily: name },
+  });
+}
 
 export const type = {
   /** Rare: the wordmark and the scene number on the slate. */
-  display: { ...display(900), fontSize: 44, lineHeight: 44, letterSpacing: 0.2 },
+  display: { ...display(800), fontSize: 40, lineHeight: 44, letterSpacing: -0.6 },
   /** Screen and stage titles. */
-  title: { ...display(800), fontSize: 30, lineHeight: 32, letterSpacing: 0.2 },
+  title: { ...display(700), fontSize: 28, lineHeight: 34, letterSpacing: -0.4 },
   /** Big buttons and card titles. */
-  label: { ...display(800), fontSize: 22, lineHeight: 24, letterSpacing: 0.3 },
-  heading: { ...system, fontSize: 17, lineHeight: 22, fontWeight: '600' },
-  body: { ...system, fontSize: 16, lineHeight: 23, fontWeight: '400' },
-  callout: { ...system, fontSize: 15, lineHeight: 20, fontWeight: '500' },
-  caption: { ...system, fontSize: 13, lineHeight: 18, fontWeight: '500' },
-  micro: { ...system, fontSize: 12, lineHeight: 16, fontWeight: '600', letterSpacing: 0.2 },
+  label: { ...display(600), fontSize: 17, lineHeight: 22, letterSpacing: -0.1 },
+  heading: { ...display(600), fontSize: 17, lineHeight: 22 },
+  body: { ...inter(400), fontSize: 15, lineHeight: 22 },
+  callout: { ...inter(500), fontSize: 15, lineHeight: 20 },
+  caption: { ...inter(400), fontSize: 13, lineHeight: 18 },
+  micro: { ...inter(600), fontSize: 11, lineHeight: 14, letterSpacing: 0.8, textTransform: 'uppercase' },
 } satisfies Record<string, TextStyle>;
 
 export type TypeVariant = keyof typeof type;

@@ -1,4 +1,8 @@
+import { router } from 'expo-router';
+
 import { Check } from '@/components/icons';
+import { LoopVideo } from '@/components/LoopVideo';
+import { HERO_WIPE_WIDE } from '@/lib/examples';
 import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/Button';
@@ -46,8 +50,17 @@ export default function PaywallScreen() {
 
   return (
     <Screen header={<Header title="Credits and plans" close />}>
+      <Press onPress={() => router.push('/examples')} style={styles.preview} accessibilityLabel="Watch a real before and after, then see more examples">
+        <LoopVideo source={HERO_WIPE_WIDE} style={StyleSheet.absoluteFill} />
+        <View style={styles.previewCaption}>
+          <T v="micro">Real before → after · see more examples</T>
+        </View>
+      </Press>
+      <T v="body" c="smoke">
+        Every video shows its full price before anything renders.
+      </T>
       <T v="caption" c="ash">
-        Sample prices. Purchases are simulated in this prototype, nothing is charged.
+        Sample prices. Purchases are simulated in this prototype, nothing is charged. At launch, checkout runs on Stripe and opens in Safari.
       </T>
 
       <View style={styles.block}>
@@ -106,6 +119,8 @@ export default function PaywallScreen() {
 }
 
 const styles = StyleSheet.create({
+  preview: { width: '100%', aspectRatio: 16 / 9, borderRadius: radius.l, overflow: 'hidden', backgroundColor: color.flat },
+  previewCaption: { position: 'absolute', left: space.m, bottom: space.m, paddingHorizontal: space.s, paddingVertical: 4, borderRadius: radius.s, backgroundColor: color.scrim },
   block: {
     gap: space.m,
   },

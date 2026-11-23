@@ -353,7 +353,7 @@ export class Compositor {
       const g = c.getContext('2d')!;
       g.clearRect(0, 0, c.width, c.height);
       const size = Math.round(Math.min(c.width * 0.085, c.height * 0.11));
-      g.font = `900 ${size}px BigShouldersDisplay_900Black, "Arial Narrow", sans-serif`;
+      g.font = `800 ${size}px Sora_800ExtraBold, Sora, sans-serif`;
       g.textBaseline = 'alphabetic';
       const words = shown.map((w) => w.text.toUpperCase());
       // Wrap to two lines at most, centered in the lower third.

@@ -59,6 +59,15 @@ Keep the checklist current. A session can end without warning.
 - [x] B-roll organized for the switch (`src/engine/broll.ts`): cutaways placed on cut points before the switch, never back to back, at most ~25% of the video, stretches no take reaches covered first (in cutaway-length pieces), the artist's own clips and plan cutaways ahead of the director's pitches. The switch skips seconds under b-roll; a cutaway dropped or failed after the switch sends that spot back through SwitchX (`missingShots`, `Shot.fill`). Generated cutaways are prompted with the scene's light and color (`brollPrompt`)
 - [x] The cut moves take edges to the beat and never leaves a sub-second flash or a black hole when another take covers it
 - [x] Start point right before recording: slide along the song while it plays and let go, or hit Start here. The first take places the video (`placeVideo`); later takes stay inside it
+- [x] v3 flow (Nov 23, 2026): Figma look (Sora, Inter, #FA1A55 palette); welcome + "What it can do" with real SwitchX before/afters from the artist's own takes (`assets/examples`, `src/lib/examples.ts`); credits screen opens with a real before/after
+- [x] Pick your path at New video: Let AI direct (toggle: approve each step) or Work with my vision (`setPath`, maps to `autonomy`)
+- [x] "Let's lock in the shoot plan": ideas pitched from the song (`pitchIdeas`), the artist's own (`addMyIdea`), or a video link (`setInspiration`); picking one sets the brief
+- [x] Plan lock makes an empty location per scene (no artist, `RefImage.location`) as the scene's first SwitchX reference, plus a set guide per scene (`guideFor`). With a studio server that has an image key, `makeLocations` paints them through `/v1/references` and the switch reuses the server copy (`remoteUri`). Quality note shown at every location (`REF_QUALITY_NOTE`)
+- [x] 3D set guide (`SetGuide3D`, SVG, drag to orbit): mark, wall, phone height and distance, what the lens sees, light
+- [x] Scene-by-scene shoot (`SceneShoot`): scene 1 first (it places the video), record any number of takes, lock each scene; `bestTake` is the AI editor's pick and the cut uses it; `autoStills` screenshots each best take and matches it to the scene's location
+- [x] Session library (`project/[id]/library`): every location, remake and screenshot
+- [x] Camera looks modeled on Alexa 35, Venice 2, FX3, V-Raptor, C70, Pocket 6K, Kodak 500T (no fisheye). Live on the web viewfinder (CSS filter), exact in player/export (compositor grade), .cube LUTs for the server
+- [ ] Claude pitches the plan ideas and watches the inspiration link (server task), native live look on the viewfinder (VisionCamera + Skia), upload clips per scene
 - [ ] First run with real keys: `npm run server:doctor`, then one short switch
 - [ ] Offline export (every frame, any device speed), generated reference frames, Select/custom mattes, native live switch
 - [ ] v2 merged to main

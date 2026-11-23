@@ -7,12 +7,14 @@ import { ActionBlock } from '@/components/chat/ActionBlock';
 import { Composer } from '@/components/chat/Composer';
 import { DirectorLine, SystemLine, UserBubble } from '@/components/chat/Messages';
 import { Dialog } from '@/components/Dialog';
+import { Images } from '@/components/icons';
 import { PlayerView } from '@/components/player/PlayerView';
 import { Press } from '@/components/Press';
 import { Header } from '@/components/Screen';
 import { Slate } from '@/components/Slate';
 import { T } from '@/components/T';
 import { revisit, setAutonomy } from '@/engine/actions';
+import { pathTitle } from '@/engine/production';
 import { currentStage, STAGE_BY_ID, stagesToRedo } from '@/engine/stages';
 import { useApp, useProject } from '@/engine/store';
 import type { Message, Project, StageId } from '@/engine/types';
@@ -70,8 +72,21 @@ export default function StudioScreen() {
   );
 
   const mode = project.pipeline === 'live' ? 'live renders' : 'demo renders';
+  const right = (
+    <View style={styles.headerRight}>
+      <Press onPress={() => router.push(`/project/${project.id}/library`)} hitSlop={8} accessibilityLabel="Library: every image this video made" style={styles.libraryBtn}>
+        <Images size={20} color={color.chalk} />
+      </Press>
+      {autopilot}
+    </View>
+  );
   const header = (
-    <Header title={project.title} kicker={project.isSample ? 'Sample video' : `${mode[0].toUpperCase()}${mode.slice(1)}`} fallback="/" right={autopilot} />
+    <Header
+      title={project.title}
+      kicker={project.isSample ? 'Sample video' : project.path ? pathTitle(project) : `${mode[0].toUpperCase()}${mode.slice(1)}`}
+      fallback="/"
+      right={right}
+    />
   );
   const player = <PlayerView project={project} label={versionLabel(project)} maxHeight={wide ? height - 220 : Math.round(height * 0.34)} />;
   const slate = <Slate project={project} expanded={expanded} onToggle={() => setExpanded((e) => !e)} onRevisit={setGoingBack} />;
@@ -152,6 +167,8 @@ function Line({ message, prev, project }: { message: Message; prev?: Message; pr
 }
 
 const styles = StyleSheet.create({
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: space.s },
+  libraryBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   page: {
     flex: 1,
     backgroundColor: color.stage,

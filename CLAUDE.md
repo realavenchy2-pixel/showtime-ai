@@ -4,6 +4,8 @@
 
 A music video agent. The artist records with the song playing (or uploads clips) and the director runs eight stages to an exported video: song, plan (stage id `looks`), shoot, cut, switch, b-roll, edit, export. Before recording, the artist locks the plan: describes the video in their words and picks Snippet or Full video; the director lays it out in ~20-second scenes. Where the video starts is picked in the recorder right before the first take, and that take places the video (`placeVideo`). Recording, the cut, effects and export are real on the web app. The switch, b-roll and Claude go live through the studio server in `server/`; without one they are simulated in `src/engine`. Read `docs/BUILD_NOTES.md` first and keep its checklist current.
 
+The v3 flow (see BUILD_NOTES): first open shows real before-and-afters (`welcome`, `examples`), every video is paid. New video asks for the path (Let AI direct, optionally approving each step, or Work with my vision). The plan step is "Let's lock in the shoot plan": ideas from the song, the artist's own, or a video link. Locking it makes an empty location (no artist) and a set guide for every scene (`production.ts`); the shoot is scene by scene with takes and locks, and the AI editor's best take carries each scene. Camera looks are modeled on cinema cameras (`cameraLooks.ts`, LUTs in `assets/luts`, rebuilt with `node scripts/make-luts.ts`).
+
 ## Before you call a task done
 
 ```bash
@@ -25,7 +27,7 @@ npm run export:web  # when a change touches web-only files or app.json
 
 - Use the tokens in `src/theme/tokens.ts`. Don't add colors.
 - Showtime pink (`color.accent`) is only for the one thing to do now. REC red is only for recording.
-- Display type is Big Shoulders Display through the `T` component (`display`, `title`, `label`); body text is the system font.
+- Type matches the Figma file "Showtime AI — App Design": Sora for display (`display`, `title`, `label`, `heading`) and Inter for everything you read, both through the `T` component.
 - Pressables use `Press`, which scales to 0.97 in 120 ms. Buttons use `Button` (primary, secondary, quiet).
 - Copy is sentence case and says what happens: "Start recording", "Approve all 30 shots".
 

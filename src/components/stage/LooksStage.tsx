@@ -34,7 +34,10 @@ import { Press } from '../Press';
 import { SectionTitle } from '../Screen';
 import { T } from '../T';
 import { showToast } from '../Toast';
+import { LocationCard } from './LocationCard';
 import { JobBar, StageScreen, WrappedNote, stageStyles } from './StageChrome';
+import { scenesOf, setCameraLook } from '@/engine/production';
+import { CameraLookPicker } from '../CameraLookPicker';
 
 const LOOK_OPTIONS: { value: LocationKind | 'custom'; label: string }[] = [...LOCATIONS.map((l) => ({ value: l.id, label: l.title })), { value: 'custom', label: 'Custom' }];
 
@@ -68,7 +71,7 @@ export function LooksStage({ project }: { project: Project }) {
         ) : (
           <>
             <Button
-              label={thinking ? 'Planning your scenes' : 'Lock the plan'}
+              label={thinking ? 'Planning your scenes' : 'Lock in the plan'}
               busy={thinking}
               disabled={!ready}
               onPress={() => {
@@ -79,7 +82,7 @@ export function LooksStage({ project }: { project: Project }) {
               accessibilityHint="Then you record. After the shoot the director cuts, switches, adds b-roll and builds the edit"
             />
             <T v="caption" c="ash" style={styles.center}>
-              Next you record. Nothing renders until the shoot is done.
+              Next: an empty location and a set guide for every scene, then you shoot them one at a time.
             </T>
           </>
         )
@@ -96,6 +99,23 @@ export function LooksStage({ project }: { project: Project }) {
       ) : (
         <PlanBrief project={project} withButton={false} />
       )}
+
+      {project.planApproved && scenesOf(project).length ? (
+        <View style={stageStyles.block}>
+          <SectionTitle detail="Made before you shoot, with nobody in them. These are exactly where you get switched to, ready the moment your takes are in.">
+            {"Where you're going"}
+          </SectionTitle>
+          {scenesOf(project).map((scene) => (
+            <LocationCard key={scene.section.id} project={project} scene={scene} showGuide={false} />
+          ))}
+          <Button label="See every scene's library" variant="quiet" onPress={() => router.push(`/project/${project.id}/library`)} />
+        </View>
+      ) : null}
+
+      <View style={stageStyles.block}>
+        <SectionTitle detail="Each one is modeled on a camera music videos are shot on. Your footage is saved untouched, so you can change it after the shoot.">Pick your camera</SectionTitle>
+        <CameraLookPicker value={project.cameraLook} onChange={(id) => apply(project.id, (p) => setCameraLook(p, id))} />
+      </View>
 
       <View style={stageStyles.block}>
         <SectionTitle detail={`SwitchX rebuilds the world around you from the prompt and up to ${project.switchSettings.maxRefs} reference ${project.switchSettings.maxRefs === 1 ? 'image' : 'images'}. Your performance stays exactly as you shot it.`}>
