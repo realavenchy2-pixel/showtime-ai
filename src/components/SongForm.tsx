@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
 import { Check, Music, Pause, Play, Upload } from '@/components/icons';
 import { formatTime } from '@/engine/director';
@@ -115,34 +115,57 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
   );
 }
 
-/** Play the track before going on. Where the video starts is picked right before the first take. */
+/** Play the track before going on: tap play, or tap or drag the bar to jump. Where the video starts is picked right before the first take. */
 function Listen({ song }: { song: Song }) {
   const preview = useSongPreview(song);
   const duration = Math.max(0.001, song.durationSec);
+  const [width, setWidth] = useState(0);
+  const [drag, setDrag] = useState<number | undefined>();
+  const shown = drag ?? preview.time;
   const toggle = () => {
     haptic.select();
     if (preview.playing) preview.pause();
     else preview.play(preview.time >= duration - 0.2 ? 0 : undefined);
   };
+  const timeAt = (e: GestureResponderEvent) => Math.max(0, Math.min(duration, (e.nativeEvent.locationX / Math.max(1, width)) * duration));
+  const nudge = (by: number) => preview.seek(Math.max(0, Math.min(duration - 0.5, preview.time + by)));
   return (
     <View style={styles.listen}>
       <Press onPress={toggle} disabled={!preview.ready} style={[styles.play, !preview.ready && styles.playOff]} accessibilityLabel={preview.playing ? 'Pause the song' : 'Play the song'}>
         {preview.playing ? <Pause size={18} color={color.stage} /> : <Play size={18} color={color.stage} />}
       </Press>
       <View style={styles.flex}>
-        <View style={styles.track}>
-          <View style={[styles.trackFill, { width: `${Math.min(100, (preview.time / duration) * 100)}%` }]} />
+        <View
+          style={styles.scrub}
+          onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+          onStartShouldSetResponder={() => preview.ready}
+          onMoveShouldSetResponder={() => preview.ready}
+          onResponderTerminationRequest={() => false}
+          onResponderGrant={(e) => setDrag(timeAt(e))}
+          onResponderMove={(e) => setDrag(timeAt(e))}
+          onResponderRelease={(e) => {
+            preview.seek(timeAt(e));
+            setDrag(undefined);
+          }}
+          onResponderTerminate={() => setDrag(undefined)}
+          accessible
+          accessibilityRole="adjustable"
+          accessibilityLabel="Song position"
+          accessibilityValue={{ min: 0, max: Math.round(duration), now: Math.round(shown), text: formatTime(shown) }}
+          accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+          onAccessibilityAction={(e) => nudge(e.nativeEvent.actionName === 'increment' ? 10 : -10)}>
+          <View style={styles.track} pointerEvents="none">
+            <View style={[styles.trackFill, { width: `${Math.min(100, (shown / duration) * 100)}%` }]} />
+          </View>
+          <View style={[styles.knob, { left: `${Math.min(100, (shown / duration) * 100)}%` }]} pointerEvents="none" />
         </View>
         <T v="caption" c="smoke" style={styles.tabular}>
-          {`${formatTime(preview.time)} / ${formatTime(duration)}`}
+          {`${formatTime(shown)} / ${formatTime(duration)}`}
         </T>
       </View>
     </View>
   );
 }
-
-
-
 
 export function songChoiceReady(v: SongChoice): v is Required<SongChoice> {
   return !!v.song && v.formats.length > 0;
@@ -193,6 +216,19 @@ const styles = StyleSheet.create({
   },
   playOff: {
     opacity: 0.4,
+  },
+  scrub: {
+    height: 24,
+    justifyContent: 'center',
+  },
+  knob: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    marginLeft: -7,
+    top: 5,
+    borderRadius: 7,
+    backgroundColor: color.chalk,
   },
   track: {
     height: 4,

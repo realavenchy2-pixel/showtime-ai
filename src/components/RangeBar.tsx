@@ -8,7 +8,20 @@ import { color, radius } from '@/theme/tokens';
  * The song's waveform with the part that becomes the video highlighted.
  * `window`: drag the whole snippet along the song. `trim`: drag either end to cut it off.
  */
-export function RangeBar({ song, range, mode, onChange }: { song: Song; range: { start: number; end: number }; mode: 'window' | 'trim'; onChange: (r: { start: number; end: number }) => void }) {
+export function RangeBar({
+  song,
+  range,
+  mode,
+  onChange,
+  playhead,
+}: {
+  song: Song;
+  range: { start: number; end: number };
+  mode: 'window' | 'trim';
+  onChange: (r: { start: number; end: number }) => void;
+  /** Where the song is playing, in seconds. */
+  playhead?: number;
+}) {
   const [width, setWidth] = useState(0);
   const drag = useRef<{ x: number; start: number; end: number; edge: 'start' | 'end' | 'both' }>({ x: 0, start: 0, end: 0, edge: 'both' });
   const dur = Math.max(1, song.durationSec);
@@ -64,6 +77,7 @@ export function RangeBar({ song, range, mode, onChange }: { song: Song; range: {
         <View style={[styles.handle, styles.handleLeft]} />
         <View style={[styles.handle, styles.handleRight]} />
       </View>
+      {playhead !== undefined ? <View pointerEvents="none" style={[styles.playhead, { left: `${Math.min(100, Math.max(0, (playhead / dur) * 100))}%` }]} /> : null}
     </View>
   );
 }
@@ -74,6 +88,7 @@ const styles = StyleSheet.create({
   bar: { flex: 1, borderRadius: 1 },
   window: { position: 'absolute', top: 0, bottom: 0, borderWidth: 2, borderColor: color.accent, borderRadius: radius.s, backgroundColor: 'rgba(250,26,85,0.08)' },
   handle: { position: 'absolute', top: '30%', bottom: '30%', width: 4, borderRadius: 2, backgroundColor: color.chalk },
+  playhead: { position: 'absolute', top: 0, bottom: 0, width: 2, marginLeft: -1, backgroundColor: color.chalk },
   handleLeft: { left: -3 },
   handleRight: { right: -3 },
 });
