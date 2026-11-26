@@ -28,6 +28,7 @@ import type {
   LiveCaps,
   LocationKind,
   Message,
+  PlanId,
   Project,
   RefImage,
   Resolution,
@@ -979,11 +980,28 @@ export function setResolution(p: Project, resolution: Resolution): Project {
   return { ...p, exportState: { ...p.exportState, resolution } };
 }
 
-/** Credits an export costs: 1 per video, 1 more for 4K unless the plan includes it. */
-export function exportCost(p: Project, fourKIncluded = false): number {
-  // 1440p and 4K finish on the studio server with an upscale, so they cost a credit more.
-  const big = p.exportState.resolution === '4K' || p.exportState.resolution === '1440p';
-  return big && !fourKIncluded ? 2 : 1;
+/** Standard and Premium are subscriptions; the free trial pays per video with credits. */
+export function isSubscribed(plan: PlanId): boolean {
+  return plan === 'Standard' || plan === 'Premium';
+}
+
+const RES_RANK: Record<Resolution, number> = { '720p': 0, '1080p': 1, '1440p': 2, '4K': 3 };
+
+/**
+ * Credits an export costs.
+ * - A new video: 1 credit, and 1 more for 1440p or 4K (they finish on the studio server with an
+ *   upscale) unless the plan is Premium, which includes them.
+ * - A touch-up, once the video has a version: free on a plan. The only exception is taking a video
+ *   bigger than it has been on Standard, which still costs the upscale credit once. Without a plan,
+ *   a touch-up costs what a new export does.
+ */
+export function exportCost(p: Project, plan: PlanId = 'Free trial'): number {
+  const res = p.exportState.resolution;
+  const upscale = (res === '4K' || res === '1440p') && plan !== 'Premium' ? 1 : 0;
+  const versions = p.versions ?? [];
+  if (versions.length === 0 || !isSubscribed(plan)) return 1 + upscale;
+  const beenThisBig = versions.some((v) => RES_RANK[v.resolution] >= RES_RANK[res]);
+  return upscale && !beenThisBig ? 1 : 0;
 }
 
 export function exportVideo(p: Project, cost = exportCost(p), opts: { external?: boolean } = {}): Project {

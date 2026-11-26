@@ -7,12 +7,14 @@ import {
   approveBroll,
   buildEdit,
   createProject,
+  exportCost,
   exportVideo,
   finishShooting,
   generateBroll,
   lockEdit,
   pickPart,
   setAutonomy,
+  setResolution,
   setFxPack,
   settle,
   skipStage,
@@ -80,6 +82,25 @@ describe('versions', () => {
     expect(versionSlug('Mud on the Rims', v)).toBe('mud-on-the-rims-v1-snippet');
     expect(nextActions(p).secondary?.label).toBe('Touch it up');
     expect(touchUpOptions(p)).toMatchObject({ edit: true, background: true, reshoot: true, full: true, nextVersion: 2 });
+  });
+
+  it('makes touch-ups free on a plan, and a credit without one', () => {
+    const open = touchUpEdit(exported());
+    expect(open.exportState.resolution).toBe('1080p');
+    // Before the first export every plan pays for the video.
+    expect(exportCost(planned(), 'Standard')).toBe(1);
+    expect(exportCost(open, 'Standard')).toBe(0);
+    expect(exportCost(open, 'Premium')).toBe(0);
+    expect(exportCost(open, 'Free trial')).toBe(1);
+    // Going bigger than the video has been still takes the upscale credit, unless Premium includes it.
+    const big = setResolution(open, '4K');
+    expect(exportCost(big, 'Standard')).toBe(1);
+    expect(exportCost(big, 'Premium')).toBe(0);
+    expect(exportCost(big, 'Free trial')).toBe(2);
+    // Once it has been 4K, 4K and smaller touch-ups are free again.
+    const again = touchUpEdit(toExport(lockEdit(big)));
+    expect(exportCost(setResolution(again, '4K'), 'Standard')).toBe(0);
+    expect(exportCost(setResolution(again, '1440p'), 'Standard')).toBe(0);
   });
 
   it('opens the edit without switching anything again, and the next export is v2', () => {

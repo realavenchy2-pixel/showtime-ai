@@ -3,13 +3,13 @@ import { create } from 'zustand';
 import { advance, createProject, exportCost, exportVideo, type NewProjectInput } from './actions';
 import { respond, runAgent } from './agent';
 import { buildSampleProjects } from './sampleProjects';
-import type { Project } from './types';
+import type { PlanId, Project } from './types';
 import { recordVersion } from './versions';
 
 // App state. Projects change only through the engine's pure transitions; after each one the
 // director takes whatever steps it can on its own. Real projects are saved on the device.
 
-export type PlanId = 'Free trial' | 'Standard' | 'Premium';
+export type { PlanId } from './types';
 
 interface Saved {
   v: 2;
@@ -116,7 +116,7 @@ export const useApp = create<AppState>((set, get) => ({
   exportVideo: (id) => {
     const p = get().projects[id];
     if (!p) return 'needCredits';
-    const cost = exportCost(p, get().plan === 'Premium');
+    const cost = exportCost(p, get().plan);
     if (get().credits < cost) return 'needCredits';
     set((s) => ({ credits: s.credits - cost }));
     get().apply(id, (x) => exportVideo(x, cost));
@@ -126,7 +126,7 @@ export const useApp = create<AppState>((set, get) => ({
   chargeExport: (id) => {
     const p = get().projects[id];
     if (!p) return null;
-    const cost = exportCost(p, get().plan === 'Premium');
+    const cost = exportCost(p, get().plan);
     if (get().credits < cost) return null;
     set((s) => ({ credits: s.credits - cost }));
     return cost;

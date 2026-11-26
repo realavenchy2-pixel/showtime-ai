@@ -355,7 +355,7 @@ function smallTalk(p: Project, input: string): string {
   if (/(cost|credit|price|how much)/.test(text)) {
     const b = estimateBudget(p);
     const render = b.totalCredits ? ` Behind the scenes this cut is about ${b.totalCredits} Beeble credits to render at ${p.switchSettings.resolution}p.` : '';
-    return `One video is 1 credit, and 4K adds 1 more.${render}`;
+    return `One video is 1 credit, and 4K adds 1 more. Touch-ups after the first export are free on a plan, 1 credit without one.${render}`;
   }
   if (/\b(what'?s next|what now|next step|where are we)\b/.test(text)) {
     const next = nextActions(p).primary?.label;

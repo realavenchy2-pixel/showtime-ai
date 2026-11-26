@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { ArrowUp, ChevronDown, ChevronRight, Download, Film, Images, Music, Scissors, Video } from '@/components/icons';
-import { formatName } from '@/engine/actions';
+import { formatName, isSubscribed } from '@/engine/actions';
 import { formatTime } from '@/engine/director';
 import { sceneName, scenesOf } from '@/engine/production';
 import { useApp } from '@/engine/store';
@@ -32,6 +32,8 @@ type Pick = 'background' | 'reshoot' | null;
  */
 export function TouchUpCard({ project }: { project: Project }) {
   const apply = useApp((s) => s.apply);
+  const plan = useApp((s) => s.plan);
+  const subscribed = isSubscribed(plan);
   const [picking, setPicking] = useState<Pick>(null);
   const [text, setText] = useState('');
   const options = touchUpOptions(project);
@@ -95,7 +97,19 @@ export function TouchUpCard({ project }: { project: Project }) {
 
   return (
     <View style={stageStyles.block}>
-      <SectionTitle detail={`Change one thing any time. What you don't touch stays as it is, so only what changed renders again. Your next export is v${options.nextVersion}.`}>Touch it up</SectionTitle>
+      <SectionTitle
+        detail={`Change one thing any time. What you don't touch stays as it is, so only what changed renders again. ${
+          subscribed ? `Touch-ups are free on your plan; your next export is v${options.nextVersion}.` : `Your next export is v${options.nextVersion}, 1 credit, or free on a plan.`
+        }`}>
+        Touch it up
+      </SectionTitle>
+      {subscribed ? null : (
+        <Press onPress={() => router.push('/paywall')} hitSlop={8} style={styles.plans} accessibilityLabel="See plans. Touch-ups are free on a plan.">
+          <T v="caption" c="chalk">
+            See plans
+          </T>
+        </Press>
+      )}
       {rows
         .filter((r) => r.on)
         .map((r) => {
@@ -306,6 +320,12 @@ const styles = StyleSheet.create({
   },
   version: {
     gap: space.s,
+  },
+  plans: {
+    alignSelf: 'flex-start',
+    paddingVertical: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: color.hairlineStrong,
   },
   versionHead: {
     flexDirection: 'row',

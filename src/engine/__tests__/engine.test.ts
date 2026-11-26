@@ -640,12 +640,14 @@ describe('money', () => {
     expect(b.totalCredits).toBe(b.switchCredits + b.referenceCredits + b.brollCredits);
   });
 
-  it('charges one credit per video and one more for 4K', () => {
+  it('charges one credit per video and one more for 4K, which Premium includes', () => {
     const p = lockEdit(settleAuto(approveAllShots(settleAuto(approvePlan(planned())))));
     expect(exportCost(p)).toBe(1);
+    expect(exportCost(p, 'Standard')).toBe(1);
     const k = setResolution(p, '4K');
     expect(exportCost(k)).toBe(2);
-    expect(exportCost(k, true)).toBe(1);
+    expect(exportCost(k, 'Standard')).toBe(2);
+    expect(exportCost(k, 'Premium')).toBe(1);
   });
 });
 

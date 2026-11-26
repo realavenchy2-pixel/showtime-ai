@@ -21,13 +21,13 @@ const PLANS: { id: Exclude<PlanId, 'Free trial'>; price: string; credits: number
     id: 'Standard',
     price: '$149 a month',
     credits: 2,
-    perks: ['2 videos a month', 'Generated at 720p, upscaled to 1080p', 'All VFX packs'],
+    perks: ['2 videos a month', 'Free touch-ups on every video', 'Generated at 720p, upscaled to 1080p', 'All VFX packs'],
   },
   {
     id: 'Premium',
     price: '$299 a month',
     credits: 2,
-    perks: ['2 videos a month at native 1080p', '4K export included', 'Priority rendering'],
+    perks: ['2 videos a month at native 1080p', 'Free touch-ups on every video', '4K export included', 'Priority rendering'],
   },
 ];
 
@@ -101,7 +101,7 @@ export default function PaywallScreen() {
       </View>
 
       <View style={styles.block}>
-        <SectionTitle detail="Credits never expire.">One-off credits</SectionTitle>
+        <SectionTitle detail="Credits never expire. Without a plan, a touch-up export is 1 credit.">One-off credits</SectionTitle>
         {PACKS.map((pack) => (
           <View key={pack.credits} style={styles.pack}>
             <View style={styles.packText}>

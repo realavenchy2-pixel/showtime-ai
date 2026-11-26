@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { Check, Monitor, Smartphone } from '@/components/icons';
-import { exportCost, setExportFormats, setResolution } from '@/engine/actions';
+import { exportCost, isSubscribed, setExportFormats, setResolution } from '@/engine/actions';
 import { stageStatus } from '@/engine/stages';
 import { useApp } from '@/engine/store';
 import type { Format, Project, Resolution } from '@/engine/types';
@@ -38,7 +38,10 @@ export function ExportStage({ project }: { project: Project }) {
   const working = project.job?.stage === 'export';
   const onDevice = canExport();
   const live = project.pipeline === 'live';
-  const cost = exportCost(project, plan === 'Premium');
+  const cost = exportCost(project, plan);
+  // What each size adds on top of the base price, for this video on this plan.
+  const extraAt = (resolution: Resolution) => exportCost({ ...project, exportState: { ...state, resolution } }, plan) - exportCost({ ...project, exportState: { ...state, resolution: '1080p' } }, plan);
+  const sizeNote = (resolution: Resolution) => (extraAt(resolution) > 0 ? `+${extraAt(resolution)} credit` : 'Included');
   const editable = !state.done && !project.job && project.final.locked;
 
   const toggle = (format: Format) => {
@@ -56,6 +59,9 @@ export function ExportStage({ project }: { project: Project }) {
   };
 
   const latest = latestVersion(project);
+  const subscribed = isSubscribed(plan);
+  const exportLabel = latest ? `Export v${latest.n + 1}, ${cost === 0 ? 'free' : `${cost} ${cost === 1 ? 'credit' : 'credits'}`}` : `Export, ${cost} ${cost === 1 ? 'credit' : 'credits'}`;
+  const priceNote = latest ? (subscribed ? 'Touch-ups are free on your plan.' : `You have ${credits} ${credits === 1 ? 'credit' : 'credits'}. Touch-ups are free on a plan.`) : `You have ${credits} ${credits === 1 ? 'credit' : 'credits'}.`;
 
   return (
     <StageScreen
@@ -71,9 +77,9 @@ export function ExportStage({ project }: { project: Project }) {
           <WrappedNote text={`${latest ? `v${latest.n} is exported.` : 'Exported.'} Touch it up below, or tap Export on the slate to render it again in other sizes.`} />
         ) : status === 'locked' ? null : (
           <>
-            <Button label={`Export, ${cost} ${cost === 1 ? 'credit' : 'credits'}`} disabled={state.formats.length === 0} onPress={() => void start()} />
+            <Button label={exportLabel} disabled={state.formats.length === 0} onPress={() => void start()} />
             <T v="caption" c="ash" style={styles.center}>
-              {`You have ${credits} ${credits === 1 ? 'credit' : 'credits'}.${onDevice ? ' It renders on this device in about the length of the song per format.' : ''}`}
+              {`${priceNote}${onDevice ? ' It renders on this device in about the length of the song per format.' : ''}`}
             </T>
           </>
         )
@@ -131,8 +137,8 @@ export function ExportStage({ project }: { project: Project }) {
               options={[
                 { value: '720p', label: '720p', detail: 'Smallest file' },
                 { value: '1080p', label: '1080p HD', detail: 'Included' },
-                { value: '1440p', label: '1440p 2K', detail: plan === 'Premium' ? 'Included' : '+1 credit' },
-                { value: '4K', label: '4K', detail: plan === 'Premium' ? 'Included' : '+1 credit' },
+                { value: '1440p', label: '1440p 2K', detail: sizeNote('1440p') },
+                { value: '4K', label: '4K', detail: sizeNote('4K') },
               ]}
             />
           </View>

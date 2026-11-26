@@ -318,6 +318,9 @@ export interface FxCue {
 
 export type Resolution = '720p' | '1080p' | '1440p' | '4K';
 
+/** The artist's plan. Free trial is pay per video with credits; Standard and Premium are subscriptions. */
+export type PlanId = 'Free trial' | 'Standard' | 'Premium';
+
 export interface Job {
   id: string;
   stage: StageId;
