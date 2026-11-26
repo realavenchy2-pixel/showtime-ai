@@ -15,7 +15,9 @@ The music video agent. The artist records with the song playing, or uploads clip
 | Export to a video file | Real, rendered on the device (web app) |
 | Switch (SwitchX 3.0, or the public SwitchX when a key lacks 3.0) | Built and tested against stand-in providers. Goes live when the studio server has keys |
 | B-roll (MiniMax H3, Gemini Omni), Claude as director | Same as the switch |
-| Payments, accounts | Simulated |
+| Shoot plan ideas, empty locations, 3D set guides, scene-by-scene shoot, AI best-take pick, library | Real flow; location pictures are drawn stand-ins until the studio server has an image key |
+| Camera looks (cinema-camera emulations) | Real: live on the web viewfinder, in the player and export, and as .cube LUTs in `assets/luts` |
+| Payments, accounts | Simulated (launch plan: Stripe checkout in Safari) |
 
 The phone app (Expo) shares every screen with the web app. Its recorder is written but not yet tested on a device, and the live switch runs from the web app for now.
 

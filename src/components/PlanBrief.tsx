@@ -1,19 +1,38 @@
-import { StyleSheet, TextInput, View } from 'react-native';
+import { Image } from "expo-image";
+import { useState } from "react";
+import { StyleSheet, TextInput, View } from "react-native";
 
-import { Check } from '@/components/icons';
-import { setBrief, setVideoLength, SNIPPET_SEC, suggestedLength, videoRange } from '@/engine/actions';
-import { formatTime } from '@/engine/director';
-import { useApp } from '@/engine/store';
-import type { Project, VideoLength } from '@/engine/types';
-import { haptic } from '@/lib/haptics';
-import { lockPlan, useServer } from '@/live/session';
-import { color, radius, space, type } from '@/theme/tokens';
+import { Check, ImagePlus, Sparkles, X } from "@/components/icons";
+import {
+  pickPart,
+  snippetRange,
+  suggestedLength,
+  videoRange,
+} from "@/engine/actions";
+import { formatTime } from "@/engine/director";
+import {
+  addPlanRef,
+  composeBrief,
+  removePlanRef,
+  setInspiration,
+  setMustHaves,
+  setSongAbout,
+  smartSnippetStart,
+} from "@/engine/production";
+import { useApp } from "@/engine/store";
+import type { Project, VideoLength } from "@/engine/types";
+import { haptic } from "@/lib/haptics";
+import { lockPlan, useServer } from "@/live/session";
+import { pickImage } from "@/media/pick";
+import { color, radius, space } from "@/theme/tokens";
 
-import { Button } from './Button';
-import { Press } from './Press';
-import { T } from './T';
+import { Button } from "./Button";
+import { Press } from "./Press";
+import { RangeBar } from "./RangeBar";
+import { T } from "./T";
+import { showToast } from "./Toast";
 
-/** Locks the plan from what the artist typed and the length they picked. */
+/** Locks the plan from everything the artist said: the vision or idea, what the song is about, the must-haves. */
 export function usePlanLock(project: Project) {
   const thinking = useServer((s) => !!s.thinking[project.id]);
   const length = project.length ?? suggestedLength(project);
@@ -21,83 +40,418 @@ export function usePlanLock(project: Project) {
     thinking,
     lock: () => {
       haptic.confirm();
-      lockPlan(project.id, { brief: project.brief ?? '', length });
+      // Read the newest copy: the artist may have just typed into the plan.
+      const latest = useApp.getState().projects[project.id] ?? project;
+      lockPlan(project.id, {
+        brief: composeBrief(latest),
+        places: latest.path === "vision" ? (latest.brief ?? "") : "",
+        length: latest.length ?? length,
+      });
     },
   };
 }
 
+type Step = "part" | "about" | "musts";
+const SNIPPETS = [15, 30, 45, 60];
+
 /**
- * The plan, the way an artist would say it: describe the video in your own words and pick
- * snippet or full video. The director works out the scenes, looks, cutaways and effects.
+ * Lock in the shoot plan, one question at a time:
+ * 1. Which part of the song: a snippet (smart pick, drag or type it) or the full song with the ends trimmed.
+ * 2. What the song is about and its message, in your words. Explicit is fine.
+ * 3. Must-haves, your references and, on "Work with my vision", the vision itself.
+ * Then the director reads the lyrics and all of that, and writes the shot list.
  */
-export function PlanBrief({ project, withButton = true, onLocked }: { project: Project; withButton?: boolean; onLocked?: () => void }) {
+export function PlanBrief({
+  project,
+  onLocked,
+}: {
+  project: Project;
+  withButton?: boolean;
+  onLocked?: () => void;
+}) {
   const apply = useApp((s) => s.apply);
   const { thinking, lock } = usePlanLock(project);
   const song = project.song;
+  const [step, setStep] = useState<Step>(
+    project.partPicked ? (project.songAbout ? "musts" : "about") : "part",
+  );
+  const [mode, setMode] = useState<VideoLength>(project.length ?? "snippet");
+  const [seconds, setSeconds] = useState(30);
+  const current = videoRange(project);
+  const [range, setRange] = useState(() =>
+    project.partPicked
+      ? current
+      : song
+        ? snippetRange(song, smartSnippetStart(song, 30), 30)
+        : { start: 0, end: 0 },
+  );
+  const [about, setAbout] = useState(project.songAbout ?? "");
+  const [message, setMessage] = useState(project.songMessage ?? "");
+  const [musts, setMusts] = useState(project.mustHaves ?? "");
+  const [vision, setVision] = useState(project.brief ?? "");
+  const [link, setLink] = useState(project.inspiration ?? "");
   if (!song) return null;
-  const length = project.length ?? suggestedLength(project);
-  const locked = project.planApproved || !!project.job || thinking;
-  const start = videoRange(project).start;
-  const fullDetail = project.takes.length && start > 0.05 ? `${formatTime(start)} to the end` : `The whole song, ${formatTime(song.durationSec)}`;
+  const busy = project.planApproved || !!project.job || thinking;
+  const isVision = project.path === "vision";
 
-  const pick = (l: VideoLength) => {
-    if (locked || l === length) return;
+  const chooseMode = (m: VideoLength) => {
     haptic.select();
-    apply(project.id, (p) => setVideoLength(p, l));
+    setMode(m);
+    setRange(
+      m === "full"
+        ? { start: 0, end: song.durationSec }
+        : snippetRange(song, smartSnippetStart(song, seconds), seconds),
+    );
+  };
+  const chooseSeconds = (n: number) => {
+    haptic.select();
+    setSeconds(n);
+    setRange(snippetRange(song, range.start, n));
+  };
+  const savePart = () => {
+    apply(project.id, (p) => pickPart(p, mode, range));
+    setStep("about");
+  };
+  const saveAbout = () => {
+    apply(project.id, (p) => setSongAbout(p, about, message));
+    setStep("musts");
+  };
+  const finish = () => {
+    apply(project.id, (p) => {
+      let next = setMustHaves(p, musts);
+      next = setInspiration(next, link);
+      if (isVision) next = { ...next, brief: vision.slice(0, 1200) };
+      return next;
+    });
+    // Read the saved project on the next tick so the lock sees what was just typed.
+    setTimeout(() => {
+      lock();
+      onLocked?.();
+    }, 0);
   };
 
   return (
     <View style={styles.wrap}>
       <T v="title" accessibilityRole="header">
-        Describe what you want to shoot
+        {"Let's lock in the shoot plan"}
       </T>
-      <TextInput
-        value={project.brief ?? ''}
-        onChangeText={(text) => apply(project.id, (p) => setBrief(p, text))}
-        editable={!locked}
-        multiline
-        maxLength={1200}
-        placeholder="Me on a rooftop at night, then a white room with one light. Cutaways of the city and my chain."
-        placeholderTextColor={color.ash}
-        style={styles.box}
-        accessibilityLabel="Describe what you want to shoot"
+      <Steps
+        step={step}
+        onStep={(s) =>
+          s === "part" || project.partPicked ? setStep(s) : undefined
+        }
       />
-      <View style={styles.lengths} accessibilityRole="radiogroup" accessibilityLabel="How long the video is">
-        <LengthOption title="Snippet" detail={`About ${SNIPPET_SEC} seconds`} selected={length === 'snippet'} disabled={locked} onPress={() => pick('snippet')} />
-        <LengthOption title="Full video" detail={fullDetail} selected={length === 'full'} disabled={locked} onPress={() => pick('full')} />
-      </View>
-      {withButton ? (
-        <Button
-          label={thinking ? 'Planning your scenes' : 'Lock the plan'}
-          busy={thinking}
-          disabled={project.planApproved || !!project.job}
-          onPress={() => {
-            lock();
-            onLocked?.();
-          }}
-          accessibilityHint="The director plans every scene from what you wrote. Then you record"
-        />
+
+      {step === "part" ? (
+        <View style={styles.group}>
+          <T v="heading">Which part of the song?</T>
+          <View style={styles.modes} accessibilityRole="radiogroup">
+            <Mode
+              title="Snippet"
+              detail="Any part, any length"
+              on={mode === "snippet"}
+              onPress={() => chooseMode("snippet")}
+            />
+            <Mode
+              title="Full song"
+              detail="Trim the start or end"
+              on={mode === "full"}
+              onPress={() => chooseMode("full")}
+            />
+          </View>
+          {mode === "snippet" ? (
+            <>
+              <View style={styles.chips}>
+                {SNIPPETS.map((n) => (
+                  <Press
+                    key={n}
+                    onPress={() => chooseSeconds(n)}
+                    style={[styles.chip, seconds === n && styles.chipOn]}
+                    accessibilityLabel={`${n} seconds`}
+                  >
+                    <T
+                      v="callout"
+                      c={seconds === n ? "ink" : "chalk"}
+                    >{`${n}s`}</T>
+                  </Press>
+                ))}
+                <Press
+                  onPress={() => {
+                    haptic.select();
+                    setRange(
+                      snippetRange(
+                        song,
+                        smartSnippetStart(song, seconds),
+                        seconds,
+                      ),
+                    );
+                  }}
+                  style={styles.smart}
+                  accessibilityLabel="Smart pick: the strongest part"
+                >
+                  <Sparkles size={14} color={color.accentText} />
+                  <T v="callout" c="accentText">
+                    Smart pick
+                  </T>
+                </Press>
+              </View>
+              <RangeBar
+                song={song}
+                range={range}
+                mode="window"
+                onChange={(r) => setRange(snippetRange(song, r.start, seconds))}
+              />
+              <TimeRow
+                label="Starts at"
+                value={range.start}
+                onChange={(t) => setRange(snippetRange(song, t, seconds))}
+                trailing={`ends ${formatTime(range.end)}`}
+              />
+            </>
+          ) : (
+            <>
+              <RangeBar
+                song={song}
+                range={range}
+                mode="trim"
+                onChange={setRange}
+              />
+              <TimeRow
+                label="Start"
+                value={range.start}
+                onChange={(t) =>
+                  setRange({
+                    start: Math.min(t, range.end - 5),
+                    end: range.end,
+                  })
+                }
+                trailing={`cuts ${formatTime(range.start)} off the top`}
+              />
+              <TimeRow
+                label="End"
+                value={range.end}
+                onChange={(t) =>
+                  setRange({
+                    start: range.start,
+                    end: Math.max(
+                      range.start + 5,
+                      Math.min(song.durationSec, t),
+                    ),
+                  })
+                }
+                trailing={`cuts ${formatTime(song.durationSec - range.end)} off the end`}
+              />
+            </>
+          )}
+          <T
+            v="caption"
+            c="smoke"
+          >{`${formatTime(range.end - range.start)} of video, ${formatTime(range.start)} to ${formatTime(range.end)}.`}</T>
+          <Button label="Use this part" disabled={busy} onPress={savePart} />
+        </View>
       ) : null}
-      <T v="caption" c="ash" style={styles.note}>
-        {project.brief?.trim() ? 'I turn this into scenes, cutaways and effects.' : 'Leave it empty and I plan it from the song.'} You pick where it starts right before you record.
-      </T>
+
+      {step === "about" ? (
+        <View style={styles.group}>
+          <T v="heading">What is the song about?</T>
+          <T v="caption" c="smoke">
+            Say it how it is, explicit is fine. The more you give me, the better
+            the shot list.
+          </T>
+          <TextInput
+            value={about}
+            onChangeText={setAbout}
+            multiline
+            maxLength={1500}
+            placeholder="Coming up from nothing, the people who doubted me, what I had to do to get here."
+            placeholderTextColor={color.ash}
+            style={styles.box}
+            accessibilityLabel="What the song is about"
+          />
+          <T v="heading">The overall message</T>
+          <TextInput
+            value={message}
+            onChangeText={setMessage}
+            multiline
+            maxLength={600}
+            placeholder="Never fold. Everything I got, I earned."
+            placeholderTextColor={color.ash}
+            style={[styles.box, styles.boxSmall]}
+            accessibilityLabel="The overall message"
+          />
+          <Button
+            label="Next"
+            disabled={busy || !about.trim()}
+            onPress={saveAbout}
+          />
+        </View>
+      ) : null}
+
+      {step === "musts" ? (
+        <View style={styles.group}>
+          {isVision ? (
+            <>
+              <T v="heading">Your vision</T>
+              <T v="caption" c="smoke">
+                Tell me the video you already see: places, outfits, moments,
+                cutaways. I fill in the rest and we agree on the plan.
+              </T>
+              <TextInput
+                value={vision}
+                onChangeText={setVision}
+                multiline
+                maxLength={1200}
+                placeholder="Open on a rooftop at night, then the trap house kitchen, end on the block with the whole crew."
+                placeholderTextColor={color.ash}
+                style={styles.box}
+                accessibilityLabel="Your vision"
+              />
+            </>
+          ) : null}
+          <T v="heading">Any must-haves?</T>
+          <T v="caption" c="smoke">
+            Anything the video has to have, one per line. Leave it empty and I
+            decide everything.
+          </T>
+          <TextInput
+            value={musts}
+            onChangeText={setMusts}
+            multiline
+            maxLength={800}
+            placeholder={
+              "At least one scene on the moon\nMy chain in a close-up"
+            }
+            placeholderTextColor={color.ash}
+            style={[styles.box, styles.boxSmall]}
+            accessibilityLabel="Must-haves"
+          />
+
+          <T v="heading">References</T>
+          <T v="caption" c="smoke">
+            Photos of places, looks or moments you want, and a link to a video
+            you love. Optional.
+          </T>
+          <View style={styles.refs}>
+            {(project.planRefs ?? []).map((r) => (
+              <View key={r.id} style={styles.ref}>
+                {r.uri ? (
+                  <Image
+                    source={{ uri: r.uri }}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                  />
+                ) : null}
+                <Press
+                  onPress={() =>
+                    apply(project.id, (p) => removePlanRef(p, r.id))
+                  }
+                  style={styles.refX}
+                  accessibilityLabel={`Remove ${r.label}`}
+                >
+                  <X size={12} color={color.chalk} />
+                </Press>
+              </View>
+            ))}
+            <Press
+              onPress={async () => {
+                try {
+                  const img = await pickImage();
+                  if (img)
+                    apply(project.id, (p) =>
+                      addPlanRef(p, {
+                        label: img.name,
+                        uri: img.uri,
+                        mediaId: img.mediaId,
+                      }),
+                    );
+                } catch {
+                  showToast("That image could not be added.");
+                }
+              }}
+              style={[styles.ref, styles.refAdd]}
+              accessibilityLabel="Add a reference image"
+            >
+              <ImagePlus size={20} color={color.smoke} />
+            </Press>
+          </View>
+          <TextInput
+            value={link}
+            onChangeText={setLink}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            placeholder="Link to a video for inspiration"
+            placeholderTextColor={color.ash}
+            style={[styles.box, styles.linkBox]}
+            accessibilityLabel="Link to a video for inspiration"
+          />
+
+          <Button
+            label={thinking ? "Writing your shot list" : "Make my shot list"}
+            busy={thinking}
+            disabled={busy || (isVision && !vision.trim())}
+            onPress={finish}
+          />
+          <T v="caption" c="ash" style={styles.center}>
+            {
+              "I read your lyrics and everything you said, then plan every scene. Next you'll see the backgrounds and lock each one."
+            }
+          </T>
+        </View>
+      ) : null}
     </View>
   );
 }
 
-function LengthOption({ title, detail, selected, disabled, onPress }: { title: string; detail: string; selected: boolean; disabled: boolean; onPress: () => void }) {
+function Steps({ step, onStep }: { step: Step; onStep: (s: Step) => void }) {
+  const all: { id: Step; label: string }[] = [
+    { id: "part", label: "1 · The part" },
+    { id: "about", label: "2 · The song" },
+    { id: "musts", label: "3 · Must-haves" },
+  ];
+  return (
+    <View style={styles.steps}>
+      {all.map((s) => (
+        <Press
+          key={s.id}
+          onPress={() => onStep(s.id)}
+          style={[styles.step, step === s.id && styles.stepOn]}
+          accessibilityLabel={s.label}
+        >
+          <T v="micro" c={step === s.id ? "chalk" : "ash"}>
+            {s.label}
+          </T>
+        </Press>
+      ))}
+    </View>
+  );
+}
+
+function Mode({
+  title,
+  detail,
+  on,
+  onPress,
+}: {
+  title: string;
+  detail: string;
+  on: boolean;
+  onPress: () => void;
+}) {
   return (
     <Press
       onPress={onPress}
-      disabled={disabled}
       scaleTo={0.98}
-      style={[styles.option, selected && styles.optionOn, disabled && !selected && styles.optionOff]}
+      style={[styles.mode, on && styles.modeOn]}
       accessibilityRole="radio"
-      accessibilityState={{ selected, disabled }}
-      accessibilityLabel={`${title}, ${detail}`}>
-      <View style={styles.optionTop}>
-        <T v="label">{title}</T>
-        {selected ? <Check size={18} color={color.chalk} /> : null}
+      accessibilityState={{ selected: on }}
+      accessibilityLabel={`${title}. ${detail}`}
+    >
+      <View style={styles.modeTop}>
+        <T v="label" style={styles.flex}>
+          {title}
+        </T>
+        {on ? <Check size={18} color={color.accent} strokeWidth={3} /> : null}
       </View>
       <T v="caption" c="smoke">
         {detail}
@@ -106,53 +460,154 @@ function LengthOption({ title, detail, selected, disabled, onPress }: { title: s
   );
 }
 
+/** Type a time as 1:23 or 83. */
+function TimeRow({
+  label,
+  value,
+  onChange,
+  trailing,
+}: {
+  label: string;
+  value: number;
+  onChange: (t: number) => void;
+  trailing?: string;
+}) {
+  const [text, setText] = useState<string | null>(null);
+  const commit = () => {
+    if (text === null) return;
+    const m = /^(\d+):(\d{1,2})$/.exec(text.trim());
+    const t = m ? Number(m[1]) * 60 + Number(m[2]) : Number(text.trim());
+    if (Number.isFinite(t) && t >= 0) onChange(t);
+    setText(null);
+  };
+  return (
+    <View style={styles.timeRow}>
+      <T v="callout" style={styles.timeLabel}>
+        {label}
+      </T>
+      <TextInput
+        value={text ?? formatTime(value)}
+        onChangeText={setText}
+        onBlur={commit}
+        onSubmitEditing={commit}
+        keyboardType="numbers-and-punctuation"
+        style={styles.time}
+        accessibilityLabel={`${label}, type a time like 1:05`}
+      />
+      {trailing ? (
+        <T v="caption" c="smoke" style={styles.flex}>
+          {trailing}
+        </T>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  wrap: {
-    gap: space.m,
-    padding: space.l,
-    borderRadius: radius.l,
-    backgroundColor: color.curtain,
+  wrap: { gap: space.l },
+  group: { gap: space.m },
+  flex: { flex: 1 },
+  center: { textAlign: "center" },
+  steps: { flexDirection: "row", gap: space.s },
+  step: {
+    flex: 1,
+    paddingVertical: space.s,
+    alignItems: "center",
+    borderRadius: radius.pill,
+    backgroundColor: color.flat,
+  },
+  stepOn: {
+    backgroundColor: color.rig,
     borderWidth: 1,
-    borderColor: color.hairlineStrong,
+    borderColor: color.accent,
+  },
+  modes: { flexDirection: "row", gap: space.m },
+  mode: {
+    flex: 1,
+    gap: 4,
+    padding: space.m,
+    borderRadius: radius.m,
+    backgroundColor: color.flat,
+    borderWidth: 1,
+    borderColor: color.hairline,
+  },
+  modeOn: { borderColor: color.accent },
+  modeTop: { flexDirection: "row", alignItems: "center", gap: space.s },
+  chips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space.s,
+    alignItems: "center",
+  },
+  chip: {
+    minWidth: 52,
+    paddingHorizontal: space.m,
+    paddingVertical: space.s,
+    borderRadius: radius.pill,
+    backgroundColor: color.flat,
+    alignItems: "center",
+  },
+  chipOn: { backgroundColor: color.accent },
+  smart: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: space.m,
+    paddingVertical: space.s,
+    borderRadius: radius.pill,
+    backgroundColor: color.accentSoft,
+  },
+  timeRow: { flexDirection: "row", alignItems: "center", gap: space.m },
+  timeLabel: { width: 72 },
+  time: {
+    width: 76,
+    minHeight: 40,
+    paddingHorizontal: space.m,
+    borderRadius: radius.s,
+    backgroundColor: color.flat,
+    color: color.chalk,
+    fontSize: 16,
+    textAlign: "center",
   },
   box: {
-    ...type.body,
+    minHeight: 96,
+    maxHeight: 200,
+    padding: space.m,
+    borderRadius: radius.m,
+    backgroundColor: color.flat,
+    borderWidth: 1,
+    borderColor: color.hairline,
     color: color.chalk,
-    minHeight: 112,
-    maxHeight: 220,
-    padding: space.m,
-    borderRadius: radius.m,
+    fontSize: 16,
+    lineHeight: 22,
+    textAlignVertical: "top",
+  },
+  boxSmall: { minHeight: 64 },
+  linkBox: { minHeight: 48, maxHeight: 48 },
+  refs: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
+  ref: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.s,
+    overflow: "hidden",
     backgroundColor: color.flat,
+  },
+  refAdd: {
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: color.hairline,
-    textAlignVertical: 'top',
+    borderStyle: "dashed",
   },
-  lengths: {
-    flexDirection: 'row',
-    gap: space.s,
-  },
-  option: {
-    flex: 1,
-    minHeight: 72,
-    padding: space.m,
-    gap: 2,
-    borderRadius: radius.m,
-    backgroundColor: color.flat,
-    borderWidth: 1,
-    borderColor: color.hairline,
-  },
-  optionOn: {
-    borderColor: color.chalk,
-  },
-  optionOff: {
-    opacity: 0.5,
-  },
-  optionTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  note: {
-    textAlign: 'center',
+  refX: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: color.scrim,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

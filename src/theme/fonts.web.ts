@@ -1,9 +1,5 @@
-import {
-  BigShouldersDisplay_700Bold,
-  BigShouldersDisplay_800ExtraBold,
-  BigShouldersDisplay_900Black,
-  useFonts,
-} from '@expo-google-fonts/big-shoulders-display';
+import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
+import { Sora_600SemiBold, Sora_700Bold, Sora_800ExtraBold, useFonts } from '@expo-google-fonts/sora';
 
 declare global {
   interface Window {
@@ -20,9 +16,7 @@ export function useAppFonts(): boolean {
     embedded
       ? {}
       : {
-          BigShouldersDisplay_700Bold,
-          BigShouldersDisplay_800ExtraBold,
-          BigShouldersDisplay_900Black,
+          Sora_600SemiBold, Sora_700Bold, Sora_800ExtraBold, Inter_400Regular, Inter_500Medium, Inter_600SemiBold,
         },
   );
   return true;

@@ -1,5 +1,6 @@
 import { videoRange } from '@/engine/actions';
 import { cutawayWindows, performancePieces, type CutawayWindow } from '@/engine/broll';
+import { cameraLook } from '@/engine/cameraLooks';
 import { buildCues, fxPack, LOOK_GRADE, NEUTRAL_GRADE, type Grade } from '@/engine/fx';
 import type { Format, FxCue, LyricLine, Project, Shot, Take, TakeAngle } from '@/engine/types';
 
@@ -54,7 +55,7 @@ export interface Composition {
 }
 
 export function aspectOf(format: Format): number {
-  return format === '16:9' ? 16 / 9 : format === '9:16' ? 9 / 16 : 1;
+  return format === '16:9' ? 16 / 9 : format === '9:16' ? 9 / 16 : format === '4:5' ? 4 / 5 : 1;
 }
 
 /** The format the studio previews in: wide when the artist posts wide, otherwise the first one picked. */
@@ -151,7 +152,7 @@ export function buildComposition(p: Project, opts: CompositionOptions = {}): Com
   }
 
   const effects = opts.effects ?? p.final.builds > 0;
-  const pack = effects ? fxPack(p.fx.pack) : undefined;
+  const pack = effects ? fxPack(p.fx.pack, p.fx) : undefined;
   const range = videoRange(p);
   return {
     title: p.title,
@@ -163,7 +164,8 @@ export function buildComposition(p: Project, opts: CompositionOptions = {}): Com
     segments,
     sources: [...sources.values()],
     cues: effects ? buildCues(song, p.fx) : [],
-    grade: pack?.grade ?? NEUTRAL_GRADE,
+    // The camera look the artist picked, or the effects pack's grade on projects from before camera looks.
+    grade: effects && p.cameraLook ? cameraLook(p.cameraLook).grade : (pack?.grade ?? NEUTRAL_GRADE),
     letterbox: !!pack?.letterbox && (opts.format ?? previewFormat(p)) === '16:9',
     lyrics: song.lyrics,
     kineticLyrics: effects && !!p.fx.effects.kineticLyrics && song.lyrics.length > 0,

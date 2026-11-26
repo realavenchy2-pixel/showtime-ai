@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 
 import { exportVideo, failJob, finishJob, setExportFiles, setJobProgress } from '@/engine/actions';
 import { useApp } from '@/engine/store';
-import type { Format } from '@/engine/types';
+import type { Format, Resolution } from '@/engine/types';
 import { songUrl } from '@/media/audio';
 import { aspectOf, buildComposition } from '@/media/composition';
 import { canExport, exportComposition, type ExportAudio } from '@/media/exporter';
@@ -13,7 +13,7 @@ import { saveMedia } from '@/media/library';
 
 const running = new Map<string, AbortController>();
 
-const FORMAT_FILE: Record<Format, string> = { '16:9': 'youtube', '9:16': 'reels', '1:1': 'square' };
+const FORMAT_FILE: Record<Format, string> = { '16:9': 'youtube', '9:16': 'reels', '1:1': 'square', '4:5': 'feed' };
 
 /** Longest side this device renders at. Phones render 720p so the picture stays smooth while it records. */
 export function deviceExportSize(): number {
@@ -21,9 +21,21 @@ export function deviceExportSize(): number {
   return phone ? 1280 : 1920;
 }
 
-export function exportDimensions(format: Format): { width: number; height: number } {
+/** Longest side for each resolution (its short side is the name: 1080p is 1080 on the short side). */
+const LONG_SIDE: Record<Resolution, number> = { '720p': 1280, '1080p': 1920, '1440p': 2560, '4K': 3840 };
+
+export function exportDimensions(format: Format, resolution: Resolution = '1080p'): { width: number; height: number } {
   const aspect = aspectOf(format);
-  const longest = deviceExportSize();
+  // What this device renders: up to its own limit. 1440p and 4K are upscaled from it on the studio server.
+  const longest = Math.min(LONG_SIDE[resolution], deviceExportSize());
+  const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+  return aspect >= 1 ? { width: even(longest), height: even(longest / aspect) } : { width: even(longest * aspect), height: even(longest) };
+}
+
+/** The size the artist picked, before any device limit. */
+export function targetDimensions(format: Format, resolution: Resolution): { width: number; height: number } {
+  const aspect = aspectOf(format);
+  const longest = LONG_SIDE[resolution];
   const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
   return aspect >= 1 ? { width: even(longest), height: even(longest / aspect) } : { width: even(longest * aspect), height: even(longest) };
 }
@@ -75,7 +87,7 @@ export async function runExport(projectId: string, audio?: ExportAudio): Promise
       if (!comp) throw new Error('There is nothing to render yet.');
       const label = formats.length === 1 ? 'Rendering your video. Keep this tab open.' : `Rendering format ${i + 1} of ${formats.length}. Keep this tab open.`;
       const result = await exportComposition(comp, url, {
-        size: deviceExportSize(),
+        size: Math.min(LONG_SIDE[project.exportState.resolution] ?? 1920, deviceExportSize()),
         audio,
         signal: controller.signal,
         onProgress: (f) => report((i + f) / formats.length, label),

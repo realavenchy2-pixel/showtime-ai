@@ -7,7 +7,7 @@ import { exportCost, formatName, setExportFormats, setResolution } from '@/engin
 import { stageStatus } from '@/engine/stages';
 import { useApp } from '@/engine/store';
 import type { Format, Project, Resolution } from '@/engine/types';
-import { cancelExport, exportDimensions, exportFileName, runExport } from '@/lib/exportRun';
+import { cancelExport, exportDimensions, exportFileName, runExport, targetDimensions } from '@/lib/exportRun';
 import { haptic } from '@/lib/haptics';
 import { canExport, prepareExportAudio } from '@/media/exporter';
 import { mediaBlob, saveToDevice } from '@/media/library';
@@ -26,6 +26,7 @@ const FORMATS: { id: Format; title: string; detail: string }[] = [
   { id: '16:9', title: 'YouTube', detail: 'Wide, 16:9' },
   { id: '9:16', title: 'Reels and TikTok', detail: 'Tall, 9:16' },
   { id: '1:1', title: 'Square', detail: 'Feed posts, 1:1' },
+  { id: '4:5', title: 'Instagram feed', detail: 'Portrait, 4:5' },
 ];
 
 /** Stage 8: pick where it posts and how sharp, render, and save the files. */
@@ -97,7 +98,7 @@ export function ExportStage({ project }: { project: Project }) {
           <SectionTitle detail={state.files?.length ? 'Tap one to save it or send it straight to an app.' : undefined}>Your video</SectionTitle>
           {state.files?.length ? (
             state.files.map((file) => {
-              const dims = exportDimensions(file.format);
+              const dims = exportDimensions(file.format, state.resolution);
               return (
                 <Press key={file.format} onPress={() => void save(file)} disabled={saving !== null} scaleTo={0.99} style={styles.file} accessibilityLabel={`Save the ${formatName(file.format)} video`}>
                   <Download size={20} color={color.chalk} />
@@ -138,7 +139,7 @@ export function ExportStage({ project }: { project: Project }) {
                   <View style={stageStyles.flex}>
                     <T v="callout">{f.title}</T>
                     <T v="caption" c="smoke">
-                      {onDevice ? `${f.detail}, ${exportDimensions(f.id).width} x ${exportDimensions(f.id).height}` : f.detail}
+                      {`${f.detail}, ${targetDimensions(f.id, state.resolution).width} x ${targetDimensions(f.id, state.resolution).height}`}
                     </T>
                   </View>
                   <View style={[styles.check, on && styles.checkOn]}>{on ? <Check size={14} color={color.stage} /> : null}</View>
@@ -148,15 +149,17 @@ export function ExportStage({ project }: { project: Project }) {
           </View>
 
           <View style={stageStyles.block}>
-            <SectionTitle detail={live ? 'The 4K finish reruns every shot at full size on the studio server.' : 'The 4K finish runs on the studio server once it is connected.'}>How sharp</SectionTitle>
+            <SectionTitle detail={live ? '1440p and 4K are upscaled on the studio server. Always 24 fps.' : '720p and 1080p render here. 1440p and 4K finish on the studio server once it is connected. Always 24 fps.'}>How sharp</SectionTitle>
             <Chips<Resolution>
               label="Resolution"
               value={state.resolution}
-              disabled={!editable || !live}
+              disabled={!editable}
               onChange={(resolution) => apply(project.id, (p) => setResolution(p, resolution))}
               options={[
-                { value: '1080p', label: 'HD', detail: 'Included' },
-                { value: '4K', label: '4K finish', detail: plan === 'Premium' ? 'Included' : '+1 credit' },
+                { value: '720p', label: '720p', detail: 'Smallest file' },
+                { value: '1080p', label: '1080p HD', detail: 'Included' },
+                { value: '1440p', label: '1440p 2K', detail: plan === 'Premium' ? 'Included' : '+1 credit' },
+                { value: '4K', label: '4K', detail: plan === 'Premium' ? 'Included' : '+1 credit' },
               ]}
             />
           </View>

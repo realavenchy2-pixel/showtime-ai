@@ -160,7 +160,7 @@ function lengthLine(p: Project): string {
 function PlanCard({ project }: { project: Project }) {
   const budget = estimateBudget(project);
   const cutaways = project.broll.ideas.filter((i) => i.keep);
-  const pack = fxPack(project.fx.pack);
+  const pack = fxPack(project.fx.pack, project.fx);
   const shots = project.cut.segments.filter((s) => s.takeId).length;
   const rows: { label: string; value: string }[] = [
     { label: 'Length', value: lengthLine(project) },

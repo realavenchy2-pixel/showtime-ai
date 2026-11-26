@@ -1,8 +1,8 @@
-import { router } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { router } from "expo-router";
+import { useState } from "react";
+import { StyleSheet, TextInput, View } from "react-native";
 
-import { ChevronDown, ChevronUp, ImagePlus, X } from '@/components/icons';
+import { ChevronDown, ChevronUp, ImagePlus, X } from "@/components/icons";
 import {
   addLookRef,
   removeLookRef,
@@ -13,48 +13,73 @@ import {
   setLookEverywhere,
   setLookPrompt,
   videoRange,
-} from '@/engine/actions';
-import { estimateBudget } from '@/engine/agent';
-import { formatTime } from '@/engine/director';
-import { FX_INTENSITIES, FX_PACKS } from '@/engine/fx';
-import { LOCATIONS, locationTitle } from '@/engine/samples';
-import { useApp } from '@/engine/store';
-import type { BrollModel, FxIntensity, FxPackId, LocationKind, Look, Project, Section } from '@/engine/types';
-import { haptic } from '@/lib/haptics';
-import { pickImage } from '@/media/pick';
-import { color, radius, space, type } from '@/theme/tokens';
+} from "@/engine/actions";
+import { estimateBudget } from "@/engine/agent";
+import { formatTime } from "@/engine/director";
+import { FX_INTENSITIES, FX_PACKS } from "@/engine/fx";
+import { LOCATIONS, locationTitle } from "@/engine/samples";
+import { useApp } from "@/engine/store";
+import type {
+  BrollModel,
+  FxIntensity,
+  FxPackId,
+  LocationKind,
+  Look,
+  Project,
+  Section,
+} from "@/engine/types";
+import { haptic } from "@/lib/haptics";
+import { pickImage } from "@/media/pick";
+import { color, radius, space, type } from "@/theme/tokens";
 
-import { Button } from '../Button';
-import { Chips } from '../Chips';
-import { Frame } from '../Frame';
-import { MediaImage } from '../MediaImage';
-import { PlanBrief, usePlanLock } from '../PlanBrief';
-import { CutawayRow, cutawaySummary, orderedCutaways } from './Cutaways';
-import { Press } from '../Press';
-import { SectionTitle } from '../Screen';
-import { T } from '../T';
-import { showToast } from '../Toast';
-import { JobBar, StageScreen, WrappedNote, stageStyles } from './StageChrome';
+import { Button } from "../Button";
+import { Chips } from "../Chips";
+import { Frame } from "../Frame";
+import { MediaImage } from "../MediaImage";
+import { PlanBrief, usePlanLock } from "../PlanBrief";
+import { CutawayRow, cutawaySummary, orderedCutaways } from "./Cutaways";
+import { SectionTitle } from "../Screen";
+import { T } from "../T";
+import { showToast } from "../Toast";
+import { LocationCard } from "./LocationCard";
+import { JobBar, StageScreen, stageStyles } from "./StageChrome";
+import {
+  allLocationsLocked,
+  optionCount,
+  scenesOf,
+  setCameraLook,
+  setLocationCount,
+  shotList,
+} from "@/engine/production";
+import { makeLocations } from "@/live/session";
+import { Press } from "../Press";
+import { CameraLookPicker } from "../CameraLookPicker";
 
-const LOOK_OPTIONS: { value: LocationKind | 'custom'; label: string }[] = [...LOCATIONS.map((l) => ({ value: l.id, label: l.title })), { value: 'custom', label: 'Custom' }];
+const LOOK_OPTIONS: { value: LocationKind | "custom"; label: string }[] = [
+  ...LOCATIONS.map((l) => ({ value: l.id, label: l.title })),
+  { value: "custom", label: "Custom" },
+];
 
 /** Stage 2: the plan, locked before the shoot. What the artist wants, how long, and every scene the director laid out from it. */
 export function LooksStage({ project }: { project: Project }) {
   const apply = useApp((s) => s.apply);
-  const { thinking, lock } = usePlanLock(project);
+  const { thinking } = usePlanLock(project);
   const range = videoRange(project);
   // Before the first take the scenes are counted from the top; times show from the video's start.
   const rel = (t: number) => t - range.start;
   // Only the parts of the song inside the video get a look.
-  const sections = (project.song?.sections ?? []).filter((s) => s.end > range.start + 0.01 && s.start < range.end - 0.01);
+  const sections = (project.song?.sections ?? []).filter(
+    (s) => s.end > range.start + 0.01 && s.start < range.end - 0.01,
+  );
   const [openId, setOpenId] = useState<string | null>(sections[0]?.id ?? null);
-  const working = project.job?.stage === 'looks';
+  const working = project.job?.stage === "looks";
   // Looks can change until the switch starts.
-  const open = project.plates === 'none' && !project.job && project.shots.length === 0;
-  const ready = sections.length > 0 && sections.every((s) => project.looks[s.id]);
+  const open =
+    project.plates === "none" && !project.job && project.shots.length === 0;
   const budget = estimateBudget(project);
   const ideas = project.broll.ideas;
-  const model = ideas.find((i) => i.status === 'idea')?.model ?? ideas[0]?.model ?? 'omni';
+  const model =
+    ideas.find((i) => i.status === "idea")?.model ?? ideas[0]?.model ?? "omni";
 
   return (
     <StageScreen
@@ -64,26 +89,25 @@ export function LooksStage({ project }: { project: Project }) {
         working ? (
           <JobBar project={project} />
         ) : project.planApproved ? (
-          <WrappedNote text={open ? "The plan is locked. You can still change looks, b-roll and effects until the switch starts." : 'The plan is locked. Tap Plan on the slate to go back and change it.'} />
-        ) : (
-          <>
+          allLocationsLocked(project) || project.takes.length > 0 ? (
             <Button
-              label={thinking ? 'Planning your scenes' : 'Lock the plan'}
-              busy={thinking}
-              disabled={!ready}
-              onPress={() => {
-                lock();
-                // Back to the studio, where the shoot starts.
-                router.replace(`/project/${project.id}`);
-              }}
-              accessibilityHint="Then you record. After the shoot the director cuts, switches, adds b-roll and builds the edit"
+              label="Go shoot"
+              onPress={() => router.replace(`/project/${project.id}/shoot`)}
             />
+          ) : (
             <T v="caption" c="ash" style={styles.center}>
-              Next you record. Nothing renders until the shoot is done.
+              {`Lock every background to start shooting. ${scenesOf(project).filter((sc) => !sc.look?.locationLocked).length} to go.`}
             </T>
-          </>
+          )
+        ) : (
+          <T v="caption" c="ash" style={styles.center}>
+            {thinking
+              ? "Writing your shot list."
+              : "Three quick questions, then the director writes your shot list."}
+          </T>
         )
-      }>
+      }
+    >
       {project.planApproved ? (
         project.brief ? (
           <View style={stageStyles.block}>
@@ -94,109 +118,254 @@ export function LooksStage({ project }: { project: Project }) {
           </View>
         ) : null
       ) : (
-        <PlanBrief project={project} withButton={false} />
+        <PlanBrief project={project} />
       )}
 
-      <View style={stageStyles.block}>
-        <SectionTitle detail={`SwitchX rebuilds the world around you from the prompt and up to ${project.switchSettings.maxRefs} reference ${project.switchSettings.maxRefs === 1 ? 'image' : 'images'}. Your performance stays exactly as you shot it.`}>
-          {sections.some((s) => s.scene) ? 'Every scene' : 'Where each part takes place'}
-        </SectionTitle>
-        {sections.map((section) => {
-          const look = project.looks[section.id];
-          if (!look) return null;
-          return (
-            <LookCard
-              key={section.id}
-              section={section}
-              from={rel(section.start)}
-              to={rel(section.end)}
-              look={look}
-              editable={open}
-              expanded={openId === section.id}
-              maxRefs={project.switchSettings.maxRefs}
-              onToggle={() => setOpenId((id) => (id === section.id ? null : section.id))}
-              onLocation={(loc) => apply(project.id, (p) => setLook(p, section.id, loc))}
-              onPrompt={(text) => apply(project.id, (p) => setLookPrompt(p, section.id, text))}
-              onEverywhere={() => {
-                if (look.location === 'custom') return;
-                haptic.confirm();
-                apply(project.id, (p) => setLookEverywhere(p, look.location as LocationKind));
-              }}
-              onAddRef={async () => {
-                try {
-                  const img = await pickImage();
-                  if (img) apply(project.id, (p) => addLookRef(p, section.id, { label: img.name, source: 'upload', mediaId: img.mediaId, uri: img.uri }));
-                } catch {
-                  showToast('That image could not be added.');
-                }
-              }}
-              onRemoveRef={(refId) => apply(project.id, (p) => removeLookRef(p, section.id, refId))}
-            />
-          );
-        })}
-      </View>
-
-      {ideas.length ? (
+      {project.planApproved && scenesOf(project).length ? (
         <View style={stageStyles.block}>
-          <SectionTitle detail={`${cutawaySummary(project)} Spots move to cut points once your takes are in.`}>B-roll</SectionTitle>
-          {orderedCutaways(project).map((idea) => (
-            <CutawayRow key={idea.id} project={project} idea={idea} disabled={idea.status !== 'idea'} />
+          <SectionTitle detail="Made before you shoot, with nobody in them: the one you lock is exactly where you get switched to. Pick one per scene, type a change for new options, then lock it.">
+            Your shot list
+          </SectionTitle>
+          <View style={styles.countRow}>
+            <T v="callout" style={styles.flex}>
+              Options per scene
+            </T>
+            {[1, 2, 3, 4].map((n) => (
+              <Press
+                key={n}
+                onPress={() => {
+                  apply(project.id, (p) => setLocationCount(p, n));
+                  makeLocations(project.id);
+                }}
+                style={[
+                  styles.count,
+                  optionCount(project) === n && styles.countOn,
+                ]}
+                accessibilityLabel={`${n} ${n === 1 ? "option" : "options"} per scene`}
+              >
+                <T v="callout" c={optionCount(project) === n ? "ink" : "chalk"}>
+                  {String(n)}
+                </T>
+              </Press>
+            ))}
+          </View>
+          {shotList(project).map((item) => (
+            <LocationCard
+              key={item.scene.section.id}
+              project={project}
+              scene={item.scene}
+              lyrics={item.lyrics}
+            />
           ))}
-          <Chips<BrollModel>
-            label="B-roll model"
-            value={model}
-            disabled={project.broll.approved || !!project.job}
-            onChange={(m) => apply(project.id, (p) => setBrollModel(p, m))}
-            options={[
-              { value: 'omni', label: 'Gemini Omni', detail: 'Sharper, 3 credits a second' },
-              { value: 'h3', label: 'MiniMax H3', detail: 'Faster, 2 credits a second' },
-            ]}
+          <Button
+            label="See every image in the library"
+            variant="quiet"
+            onPress={() => router.push(`/project/${project.id}/library`)}
           />
         </View>
       ) : null}
 
-      <View style={stageStyles.block}>
-        <SectionTitle detail={FX_PACKS.find((x) => x.id === project.fx.pack)?.feel ?? 'Hits land on the beat grid of your song.'}>Effects</SectionTitle>
-        <Chips<FxPackId>
-          label="Effects pack"
-          value={project.fx.pack}
-          disabled={project.final.locked}
-          onChange={(pack) => apply(project.id, (p) => setFxPack(p, pack))}
-          options={FX_PACKS.map((x) => ({ value: x.id, label: x.title }))}
-        />
-        <Chips<FxIntensity>
-          label="Effects intensity"
-          value={project.fx.intensity}
-          disabled={project.final.locked}
-          onChange={(intensity) => apply(project.id, (p) => setFxIntensity(p, intensity))}
-          options={FX_INTENSITIES.map((x) => ({ value: x.id, label: x.id }))}
-        />
-      </View>
-
-      {budget.totalCredits ? (
-        <View style={stageStyles.card}>
-          <T v="heading">Render budget</T>
-          <BudgetLine label={`Switch, ${budget.switchFrames.toLocaleString()} frames at ${project.switchSettings.resolution}p`} credits={budget.switchCredits} />
-          <BudgetLine label="Reference frames" credits={budget.referenceCredits} />
-          {budget.brollCredits ? <BudgetLine label={`B-roll, ${budget.brollSeconds} s`} credits={budget.brollCredits} /> : null}
-          <View style={styles.rule} />
-          <BudgetLine label="Total, in Beeble credits" credits={budget.totalCredits} strong />
-          <T v="caption" c="ash">
-            What this video costs you to render. Artists only see their own video credit.
-          </T>
+      {project.planApproved ? (
+        <View style={stageStyles.block}>
+          <SectionTitle detail="Each one is modeled on a camera music videos are shot on. Your footage is saved untouched, so you can change it after the shoot.">
+            Pick your camera
+          </SectionTitle>
+          <CameraLookPicker
+            value={project.cameraLook}
+            onChange={(id) => apply(project.id, (p) => setCameraLook(p, id))}
+          />
         </View>
+      ) : null}
+
+      {project.planApproved ? (
+        <>
+          <View style={stageStyles.block}>
+            <SectionTitle
+              detail={`SwitchX rebuilds the world around you from the prompt and up to ${project.switchSettings.maxRefs} reference ${project.switchSettings.maxRefs === 1 ? "image" : "images"}. Your performance stays exactly as you shot it.`}
+            >
+              {sections.some((s) => s.scene)
+                ? "Fine-tune the switch"
+                : "Where each part takes place"}
+            </SectionTitle>
+            {sections.map((section) => {
+              const look = project.looks[section.id];
+              if (!look) return null;
+              return (
+                <LookCard
+                  key={section.id}
+                  section={section}
+                  from={rel(section.start)}
+                  to={rel(section.end)}
+                  look={look}
+                  editable={open}
+                  expanded={openId === section.id}
+                  maxRefs={project.switchSettings.maxRefs}
+                  onToggle={() =>
+                    setOpenId((id) => (id === section.id ? null : section.id))
+                  }
+                  onLocation={(loc) =>
+                    apply(project.id, (p) => setLook(p, section.id, loc))
+                  }
+                  onPrompt={(text) =>
+                    apply(project.id, (p) => setLookPrompt(p, section.id, text))
+                  }
+                  onEverywhere={() => {
+                    if (look.location === "custom") return;
+                    haptic.confirm();
+                    apply(project.id, (p) =>
+                      setLookEverywhere(p, look.location as LocationKind),
+                    );
+                  }}
+                  onAddRef={async () => {
+                    try {
+                      const img = await pickImage();
+                      if (img)
+                        apply(project.id, (p) =>
+                          addLookRef(p, section.id, {
+                            label: img.name,
+                            source: "upload",
+                            mediaId: img.mediaId,
+                            uri: img.uri,
+                          }),
+                        );
+                    } catch {
+                      showToast("That image could not be added.");
+                    }
+                  }}
+                  onRemoveRef={(refId) =>
+                    apply(project.id, (p) =>
+                      removeLookRef(p, section.id, refId),
+                    )
+                  }
+                />
+              );
+            })}
+          </View>
+
+          {ideas.length ? (
+            <View style={stageStyles.block}>
+              <SectionTitle
+                detail={`${cutawaySummary(project)} Spots move to cut points once your takes are in.`}
+              >
+                B-roll
+              </SectionTitle>
+              {orderedCutaways(project).map((idea) => (
+                <CutawayRow
+                  key={idea.id}
+                  project={project}
+                  idea={idea}
+                  disabled={idea.status !== "idea"}
+                />
+              ))}
+              <Chips<BrollModel>
+                label="B-roll model"
+                value={model}
+                disabled={project.broll.approved || !!project.job}
+                onChange={(m) => apply(project.id, (p) => setBrollModel(p, m))}
+                options={[
+                  {
+                    value: "omni",
+                    label: "Gemini Omni",
+                    detail: "Sharper, 3 credits a second",
+                  },
+                  {
+                    value: "h3",
+                    label: "MiniMax H3",
+                    detail: "Faster, 2 credits a second",
+                  },
+                ]}
+              />
+            </View>
+          ) : null}
+
+          <View style={stageStyles.block}>
+            <SectionTitle
+              detail={
+                FX_PACKS.find((x) => x.id === project.fx.pack)?.feel ??
+                "Hits land on the beat grid of your song."
+              }
+            >
+              Effects
+            </SectionTitle>
+            <Chips<FxPackId>
+              label="Effects pack"
+              value={project.fx.pack}
+              disabled={project.final.locked}
+              onChange={(pack) => apply(project.id, (p) => setFxPack(p, pack))}
+              options={FX_PACKS.map((x) => ({ value: x.id, label: x.title }))}
+            />
+            <Chips<FxIntensity>
+              label="Effects intensity"
+              value={project.fx.intensity}
+              disabled={project.final.locked}
+              onChange={(intensity) =>
+                apply(project.id, (p) => setFxIntensity(p, intensity))
+              }
+              options={FX_INTENSITIES.map((x) => ({
+                value: x.id,
+                label: x.id,
+              }))}
+            />
+          </View>
+
+          {budget.totalCredits ? (
+            <View style={stageStyles.card}>
+              <T v="heading">Render budget</T>
+              <BudgetLine
+                label={`Switch, ${budget.switchFrames.toLocaleString()} frames at ${project.switchSettings.resolution}p`}
+                credits={budget.switchCredits}
+              />
+              <BudgetLine
+                label="Reference frames"
+                credits={budget.referenceCredits}
+              />
+              {budget.brollCredits ? (
+                <BudgetLine
+                  label={`B-roll, ${budget.brollSeconds} s`}
+                  credits={budget.brollCredits}
+                />
+              ) : null}
+              <View style={styles.rule} />
+              <BudgetLine
+                label="Total, in Beeble credits"
+                credits={budget.totalCredits}
+                strong
+              />
+              <T v="caption" c="ash">
+                What this video costs you to render. Artists only see their own
+                video credit.
+              </T>
+            </View>
+          ) : null}
+        </>
       ) : null}
     </StageScreen>
   );
 }
 
-function BudgetLine({ label, credits, strong }: { label: string; credits: number; strong?: boolean }) {
+function BudgetLine({
+  label,
+  credits,
+  strong,
+}: {
+  label: string;
+  credits: number;
+  strong?: boolean;
+}) {
   return (
     <View style={stageStyles.row}>
-      <T v={strong ? 'callout' : 'caption'} c={strong ? 'chalk' : 'smoke'} style={stageStyles.flex}>
+      <T
+        v={strong ? "callout" : "caption"}
+        c={strong ? "chalk" : "smoke"}
+        style={stageStyles.flex}
+      >
         {label}
       </T>
-      <T v={strong ? 'callout' : 'caption'} c={strong ? 'chalk' : 'smoke'} style={styles.tabular}>
+      <T
+        v={strong ? "callout" : "caption"}
+        c={strong ? "chalk" : "smoke"}
+        style={styles.tabular}
+      >
         {credits.toLocaleString()}
       </T>
     </View>
@@ -213,24 +382,56 @@ interface CardProps {
   expanded: boolean;
   maxRefs: number;
   onToggle: () => void;
-  onLocation: (loc: LocationKind | 'custom') => void;
+  onLocation: (loc: LocationKind | "custom") => void;
   onPrompt: (text: string) => void;
   onEverywhere: () => void;
   onAddRef: () => void;
   onRemoveRef: (refId: string) => void;
 }
 
-function LookCard({ section, from, to, look, editable, expanded, maxRefs, onToggle, onLocation, onPrompt, onEverywhere, onAddRef, onRemoveRef }: CardProps) {
-  const set = look.location === 'custom' ? 'darkVoid' : look.location;
+function LookCard({
+  section,
+  from,
+  to,
+  look,
+  editable,
+  expanded,
+  maxRefs,
+  onToggle,
+  onLocation,
+  onPrompt,
+  onEverywhere,
+  onAddRef,
+  onRemoveRef,
+}: CardProps) {
+  const set = look.location === "custom" ? "darkVoid" : look.location;
   const Chevron = expanded ? ChevronUp : ChevronDown;
   return (
     <View style={styles.card}>
-      <Press onPress={onToggle} scaleTo={0.99} style={styles.cardHead} accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={`${section.label}, ${locationTitle(look.location)}`}>
+      <Press
+        onPress={onToggle}
+        scaleTo={0.99}
+        style={styles.cardHead}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={`${section.label}, ${locationTitle(look.location)}`}
+      >
         <View style={styles.swatch}>
-          {look.refs[0] ? <MediaImage mediaId={look.refs[0].mediaId} uri={look.refs[0].uri} style={styles.fill} /> : <Frame kind={set} relit rounded={false} noArtist />}
+          {look.refs[0] ? (
+            <MediaImage
+              mediaId={look.refs[0].mediaId}
+              uri={look.refs[0].uri}
+              style={styles.fill}
+            />
+          ) : (
+            <Frame kind={set} relit rounded={false} noArtist />
+          )}
         </View>
         <View style={stageStyles.flex}>
-          <T v="micro" c="smoke">{`${section.label}, ${formatTime(from)} to ${formatTime(to)}`}</T>
+          <T
+            v="micro"
+            c="smoke"
+          >{`${section.label}, ${formatTime(from)} to ${formatTime(to)}`}</T>
           <T v="label">{locationTitle(look.location)}</T>
         </View>
         <Chevron size={20} color={color.smoke} />
@@ -238,7 +439,13 @@ function LookCard({ section, from, to, look, editable, expanded, maxRefs, onTogg
 
       {expanded ? (
         <View style={styles.cardBody}>
-          <Chips<LocationKind | 'custom'> label={`Look for ${section.label}`} value={look.location} disabled={!editable} onChange={onLocation} options={LOOK_OPTIONS} />
+          <Chips<LocationKind | "custom">
+            label={`Look for ${section.label}`}
+            value={look.location}
+            disabled={!editable}
+            onChange={onLocation}
+            options={LOOK_OPTIONS}
+          />
 
           <View style={styles.field}>
             <T v="micro" c="smoke">
@@ -257,30 +464,55 @@ function LookCard({ section, from, to, look, editable, expanded, maxRefs, onTogg
           </View>
 
           <View style={styles.field}>
-            <T v="micro" c="smoke">{`Reference images ${look.refs.length}/${maxRefs}`}</T>
+            <T
+              v="micro"
+              c="smoke"
+            >{`Reference images ${look.refs.length}/${maxRefs}`}</T>
             <View style={styles.refs}>
               {look.refs.map((ref) => (
                 <View key={ref.id} style={styles.ref}>
-                  <MediaImage mediaId={ref.mediaId} uri={ref.uri} style={styles.fill} label={ref.label} />
+                  <MediaImage
+                    mediaId={ref.mediaId}
+                    uri={ref.uri}
+                    style={styles.fill}
+                    label={ref.label}
+                  />
                   {editable ? (
-                    <Press onPress={() => onRemoveRef(ref.id)} style={styles.refRemove} accessibilityLabel={`Remove reference ${ref.label}`} hitSlop={8}>
+                    <Press
+                      onPress={() => onRemoveRef(ref.id)}
+                      style={styles.refRemove}
+                      accessibilityLabel={`Remove reference ${ref.label}`}
+                      hitSlop={8}
+                    >
                       <X size={14} color={color.chalk} />
                     </Press>
                   ) : null}
                 </View>
               ))}
               {editable && look.refs.length < maxRefs ? (
-                <Press onPress={onAddRef} style={[styles.ref, styles.refAdd]} accessibilityLabel="Add a reference image">
+                <Press
+                  onPress={onAddRef}
+                  style={[styles.ref, styles.refAdd]}
+                  accessibilityLabel="Add a reference image"
+                >
                   <ImagePlus size={20} color={color.smoke} />
                 </Press>
               ) : null}
             </View>
             <T v="caption" c="ash">
-              {look.refs.length ? 'SwitchX matches these. The prompt directs what happens.' : 'Optional. Without one I build a reference from a frame of your take.'}
+              {look.refs.length
+                ? "SwitchX matches these. The prompt directs what happens."
+                : "Optional. Without one I build a reference from a frame of your take."}
             </T>
           </View>
 
-          {editable && look.location !== 'custom' ? <Button label={`Use ${locationTitle(look.location).toLowerCase()} for the whole video`} variant="quiet" onPress={onEverywhere} /> : null}
+          {editable && look.location !== "custom" ? (
+            <Button
+              label={`Use ${locationTitle(look.location).toLowerCase()} for the whole video`}
+              variant="quiet"
+              onPress={onEverywhere}
+            />
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -288,19 +520,30 @@ function LookCard({ section, from, to, look, editable, expanded, maxRefs, onTogg
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  countRow: { flexDirection: "row", alignItems: "center", gap: space.s },
+  count: {
+    width: 40,
+    height: 36,
+    borderRadius: radius.s,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: color.flat,
+  },
+  countOn: { backgroundColor: color.accent },
   center: {
-    textAlign: 'center',
+    textAlign: "center",
   },
   tabular: {
-    fontVariant: ['tabular-nums'],
+    fontVariant: ["tabular-nums"],
   },
   rule: {
     height: 1,
     backgroundColor: color.hairline,
   },
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: space.m,
     padding: space.m,
     borderRadius: radius.m,
@@ -313,11 +556,11 @@ const styles = StyleSheet.create({
     backgroundColor: color.curtain,
     borderWidth: 1,
     borderColor: color.hairline,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   cardHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: space.m,
     padding: space.s,
     paddingRight: space.l,
@@ -327,12 +570,12 @@ const styles = StyleSheet.create({
     width: 84,
     aspectRatio: 16 / 9,
     borderRadius: radius.s,
-    overflow: 'hidden',
+    overflow: "hidden",
     backgroundColor: color.flat,
   },
   fill: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   cardBody: {
     gap: space.l,
@@ -352,37 +595,37 @@ const styles = StyleSheet.create({
     backgroundColor: color.flat,
     borderWidth: 1,
     borderColor: color.hairline,
-    textAlignVertical: 'top',
+    textAlignVertical: "top",
   },
   refs: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: space.s,
   },
   ref: {
     width: 72,
     height: 72,
     borderRadius: radius.s,
-    overflow: 'hidden',
+    overflow: "hidden",
     backgroundColor: color.flat,
   },
   refAdd: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
-    borderStyle: 'dashed',
+    borderStyle: "dashed",
     borderColor: color.hairlineStrong,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
   },
   refRemove: {
-    position: 'absolute',
+    position: "absolute",
     top: 4,
     right: 4,
     width: 22,
     height: 22,
     borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: color.scrim,
   },
 });

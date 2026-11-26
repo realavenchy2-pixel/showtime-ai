@@ -10,7 +10,7 @@ export type LocationKind = 'beach' | 'alley' | 'whiteVoid' | 'darkVoid' | 'hangi
 
 export type Vibe = 'Drill' | 'Trap' | 'Melodic' | 'Boom bap' | 'Dark';
 
-export type Format = '16:9' | '9:16' | '1:1';
+export type Format = '16:9' | '9:16' | '1:1' | '4:5';
 
 /** A snippet (about 30 seconds) or the full song from wherever the artist starts. */
 export type VideoLength = 'snippet' | 'full';
@@ -96,6 +96,8 @@ export interface Take {
   sync: 'clock' | 'audio';
   /** Something the director noticed, e.g. drifting out of frame. */
   flag?: string;
+  /** Recorded for this scene of the plan (0-based, in order). Scenes are shot one at a time. */
+  scene?: number;
 }
 
 /** Uploaded footage that could not be lined up with the song. Used as cutaways. */
@@ -126,6 +128,15 @@ export interface RefImage {
   source: 'upload' | 'generated';
   mediaId?: string;
   uri?: string;
+  /**
+   * The empty location, generated at the plan before anything is shot (no artist in it).
+   * It is what the artist gets switched into, so it goes to SwitchX as the scene's first reference.
+   */
+  location?: boolean;
+  /** What the image was generated from. */
+  prompt?: string;
+  /** Already on the provider (made by the studio server), so the switch doesn't upload it again. */
+  remoteUri?: string;
 }
 
 /** Where a section takes place: what SwitchX is asked to build around the artist. */
@@ -135,6 +146,10 @@ export interface Look {
   prompt: string;
   /** Up to four reference images. */
   refs: RefImage[];
+  /** Background options generated for this scene before the shoot (no artist in them). The picked one is the location ref. */
+  options?: RefImage[];
+  /** The artist locked this scene's background. */
+  locationLocked?: boolean;
 }
 
 /** How SwitchX decides what to keep from the source. */
@@ -212,7 +227,7 @@ export interface BrollIdea {
   mediaId?: string;
 }
 
-export type FxPackId = 'drill' | 'trapHype' | 'melodic' | 'boomBap' | 'dark';
+export type FxPackId = 'drill' | 'trapHype' | 'melodic' | 'boomBap' | 'dark' | 'copied';
 export type FxIntensity = 'Clean' | 'Hype' | 'Unhinged';
 export type FxEffectId =
   | 'punchIn'
@@ -226,8 +241,22 @@ export type FxEffectId =
   | 'textBehind'
   | 'glowOutline';
 
+/** Effects copied from a video the artist uploaded: its color, its pace, its hits. */
+export interface CopiedFx {
+  title: string;
+  feel: string;
+  effects: FxEffectId[];
+  density: number[];
+  grade: { temp: number; tint: number; contrast: number; saturation: number; crush: number; grain: number; vignette: number };
+  letterbox: boolean;
+  /** Cuts per second in the source video. */
+  cutsPerSec: number;
+}
+
 export interface FxPlan {
   pack?: FxPackId;
+  /** Set when pack is 'copied'. */
+  copied?: CopiedFx;
   intensity: FxIntensity;
   effects: Record<FxEffectId, boolean>;
 }
@@ -242,7 +271,7 @@ export interface FxCue {
   amount: number;
 }
 
-export type Resolution = '1080p' | '4K';
+export type Resolution = '720p' | '1080p' | '1440p' | '4K';
 
 export interface Job {
   id: string;
@@ -273,6 +302,72 @@ export interface Idea {
   stage: StageId | 'brief';
   at: number;
 }
+
+/** How the artist wants to work. `ai`: the director pitches and runs it. `vision`: the artist brings the idea and agrees the plan with the director. */
+export type CreativePath = 'ai' | 'vision';
+
+/** A direction for the video, before it's locked into scenes. */
+export interface PlanIdea {
+  id: string;
+  title: string;
+  /** One or two lines the director would say to sell it. */
+  pitch: string;
+  /** Where it came from: the director's read of the song, the artist's own words, or a video they like. */
+  source: 'song' | 'mine' | 'inspiration';
+}
+
+export type Framing = 'wide' | 'medium' | 'close';
+
+/**
+ * The set guide for one scene: where the artist stands, where the phone goes, how high, which lens.
+ * Distances in meters on the floor plan; the artist's mark is the origin and the camera looks along -z.
+ */
+export interface SetGuide {
+  scene: number;
+  framing: Framing;
+  /** Phone position relative to the artist's mark. */
+  camera: { x: number; z: number; height: number };
+  /** Equivalent focal length, 24 is the phone's main camera at 1x. */
+  lensMm: number;
+  /** How much room to keep behind the artist. */
+  backroomM: number;
+  /** Where the main light sits, as a clock direction from the camera's view. */
+  light: 'left' | 'right' | 'behind camera' | 'overhead';
+  /** Plain steps, said once before the scene. */
+  steps: string[];
+  /** Stand-ins for what the scene needs you to hold, lean on or sit in (a broom for a mic stand). */
+  props?: Prop[];
+}
+
+export type PropKind = 'bar' | 'stand' | 'seat' | 'wall' | 'table' | 'steps';
+
+export interface Prop {
+  kind: PropKind;
+  /** What it stands in for, in the scene. */
+  for: string;
+  /** What to use at home and how. */
+  say: string;
+}
+
+export type LibraryKind = 'location' | 'startFrame' | 'still' | 'broll';
+
+/** Every image the session makes, so nothing generated gets lost. */
+export interface LibraryItem {
+  id: string;
+  kind: LibraryKind;
+  label: string;
+  scene?: number;
+  uri?: string;
+  mediaId?: string;
+  /** Location kind, so stand-in art can draw it when there's no file yet. */
+  art?: LocationKind | 'custom';
+  /** The reference image this item shows, so a generated picture lands on both. */
+  refId?: string;
+  at: number;
+}
+
+/** Built-in camera looks, each modeled on a camera music videos are shot on. */
+export type CameraLookId = 'alexa' | 'venice' | 'fx3' | 'red' | 'canon' | 'pocket' | 'film500t' | 'natural';
 
 /** `auto`: the director runs the pipeline and stops only where it needs the artist. `ask`: it stops at every step. */
 export type Autonomy = 'auto' | 'ask';
@@ -336,6 +431,31 @@ export interface Project {
     files?: { format: Format; mediaId: string; extension: string }[];
   };
   skipped: StageId[];
+  /** Picked right after the song. Unset on projects made before paths existed. */
+  path?: CreativePath;
+  /** Directions for the video: pitched from the song, the artist's own, or from a video they like. */
+  planIdeas?: PlanIdea[];
+  /** A link to a video the artist wants it to feel like. */
+  inspiration?: string;
+  /** The part of the song was picked in the plan, so the first take doesn't place the video. */
+  partPicked?: boolean;
+  /** What the song is about and its message, in the artist's words. Explicit is fine. */
+  songAbout?: string;
+  songMessage?: string;
+  /** Things the video has to have, one per line ("at least one scene on the moon"). */
+  mustHaves?: string;
+  /** The artist's own reference images for the video, on either path. */
+  planRefs?: RefImage[];
+  /** How many background options to generate per scene, 1 to 4. */
+  locationCount?: number;
+  /** The camera look, applied on render. Footage is always saved ungraded. */
+  cameraLook?: CameraLookId;
+  /** One set guide per scene, in scene order. Made when the plan locks. */
+  guides?: SetGuide[];
+  /** Scenes the artist is happy with, by scene number. */
+  sceneLocks?: Record<number, boolean>;
+  /** Every image this project generated. */
+  library?: LibraryItem[];
   job?: Job;
   ideas: Idea[];
   messages: Message[];

@@ -1,6 +1,10 @@
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { buildEdit, lockEdit, setFxIntensity, setFxPack, toggleEffect } from '@/engine/actions';
+import { buildEdit, lockEdit, setCopiedFx, setFxIntensity, setFxPack, toggleEffect } from '@/engine/actions';
+import { copyFxFromVideo } from '@/media/copyFx';
+import { Upload } from '@/components/icons';
+import { showToast } from '../Toast';
 import { FX_EFFECTS, FX_INTENSITIES, FX_PACKS } from '@/engine/fx';
 import { useApp } from '@/engine/store';
 import type { FxIntensity, Project } from '@/engine/types';
@@ -19,6 +23,7 @@ import { JobBar, StageScreen, WrappedNote, stageStyles } from './StageChrome';
 /** Stage 7: the edit. Watch it with every effect live, change the pack or single effects, then lock it. */
 export function EditStage({ project }: { project: Project }) {
   const apply = useApp((s) => s.apply);
+  const [copying, setCopying] = useState(false);
   const working = project.job?.stage === 'edit';
   const built = project.final.builds > 0;
   const locked = project.final.locked;
@@ -87,6 +92,46 @@ export function EditStage({ project }: { project: Project }) {
               </Press>
             );
           })}
+          {project.fx.pack === 'copied' && project.fx.copied ? (
+            <View style={[styles.pack, styles.packOn]}>
+              <View style={stageStyles.flex}>
+                <T v="label">{project.fx.copied.title}</T>
+                <T v="caption" c="smoke">{`${project.fx.copied.feel}. ${project.fx.copied.cutsPerSec} cuts a second.`}</T>
+              </View>
+              <View style={styles.density} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+                {project.fx.copied.density.map((d, i) => (
+                  <View key={i} style={[styles.bar, styles.barOn, { height: 6 + d * 5 }]} />
+                ))}
+              </View>
+            </View>
+          ) : null}
+          <Press
+            scaleTo={0.99}
+            disabled={locked || copying}
+            onPress={async () => {
+              setCopying(true);
+              try {
+                const copied = await copyFxFromVideo();
+                if (copied) {
+                  haptic.success();
+                  apply(project.id, (p) => setCopiedFx(p, copied));
+                }
+              } catch (e) {
+                showToast(e instanceof Error ? e.message : 'That video could not be read.');
+              } finally {
+                setCopying(false);
+              }
+            }}
+            style={[styles.pack, styles.copy]}
+            accessibilityLabel="Copy the effects from a video you upload">
+            <Upload size={20} color={color.chalk} />
+            <View style={stageStyles.flex}>
+              <T v="label">{copying ? 'Watching your video' : 'Copy from a video'}</T>
+              <T v="caption" c="smoke">
+                Upload a video you love. I copy its color, how fast it cuts, its flashes and shakes. See one on YouTube? Screen-record it and upload that.
+              </T>
+            </View>
+          </Press>
         </View>
       </View>
 
@@ -139,6 +184,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.hairline,
   },
+  copy: { borderStyle: 'dashed' },
   packOn: {
     borderColor: color.chalk,
     backgroundColor: color.flat,

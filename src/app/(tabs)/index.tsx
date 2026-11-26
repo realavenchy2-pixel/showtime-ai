@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { Plus } from '@/components/icons';
 import { FlatList, Image, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +21,9 @@ export default function VideosScreen() {
   const projects = useApp((s) => s.projects);
   const credits = useApp((s) => s.credits);
   const items = order.map((id) => projects[id]).filter(Boolean);
+  const seenWelcome = useApp((s) => s.seenWelcome);
+  // First open: show it working before anything else.
+  if (!seenWelcome) return <Redirect href="/welcome" />;
 
   return (
     <View style={[styles.page, { paddingTop: insets.top }]}>
@@ -48,6 +51,11 @@ export default function VideosScreen() {
             <T v="body" c="smoke">
               Record your verse, pick the look, and your director takes it from raw takes to a finished video.
             </T>
+            <Press onPress={() => router.push('/examples')} style={styles.examples} accessibilityLabel="See what Showtime can do">
+              <T v="callout" c="accentText">
+                See what it can do
+              </T>
+            </Press>
             <Button label="New video" icon={Plus} onPress={() => router.push('/new')} />
             <T v="heading" style={styles.sectionTitle}>
               Your videos
@@ -99,6 +107,7 @@ function ProjectTile({ project }: { project: Project }) {
 }
 
 const styles = StyleSheet.create({
+  examples: { minHeight: 32, justifyContent: 'center' },
   page: {
     flex: 1,
     backgroundColor: color.stage,

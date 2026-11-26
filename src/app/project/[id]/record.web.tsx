@@ -7,7 +7,10 @@ import { RecorderChrome, type RecorderPhase } from '@/components/record/Recorder
 import { goBack } from '@/components/Screen';
 import { T } from '@/components/T';
 import { showToast } from '@/components/Toast';
+import { CAMERA_LOOKS, cameraLook, cssFilter } from '@/engine/cameraLooks';
+import { scenesOf, sceneName, setCameraLook } from '@/engine/production';
 import { useApp, useProject } from '@/engine/store';
+import { playShutter } from '@/lib/shutter';
 import type { Song } from '@/engine/types';
 import { addRecorded } from '@/lib/footage';
 import { haptic } from '@/lib/haptics';
@@ -41,7 +44,8 @@ function median(values: number[]): number | undefined {
 
 /** The recorder: the song plays, the camera rolls, and every take lands lined up with the track. */
 export default function RecordScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, scene: sceneParam } = useLocalSearchParams<{ id: string; scene?: string }>();
+  const sceneIndex = sceneParam !== undefined && sceneParam !== '' ? Number(sceneParam) : undefined;
   const project = useProject(id);
   const apply = useApp((s) => s.apply);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -59,7 +63,7 @@ export default function RecordScreen() {
   const [listening, setListening] = useState(false);
 
   const song = project?.song;
-  const take = useTakeRange(project);
+  const take = useTakeRange(project, sceneIndex);
   const { from, to } = take;
   const listenUntil = take.bounds.end;
   const n = project?.takes.length ?? 0;
@@ -136,7 +140,7 @@ export default function RecordScreen() {
       // Where the song was when the first frame was written, by the recorder's clock.
       const clockStart = median(take.samples) ?? take.from;
       const rec = await saveRecording(raw, song, clockStart, still);
-      apply(project.id, (p) => addRecorded(p, rec, take.from, false));
+      apply(project.id, (p) => addRecorded(p, rec, take.from, false, sceneIndex));
       haptic.success();
       showToast(`Take ${n + 1} saved and lined up with the song`);
     } catch {
@@ -326,7 +330,16 @@ export default function RecordScreen() {
       onRecord={() => void record()}
       onStop={() => void stop()}
       onFlip={phase === 'blocked' ? undefined : () => void flip()}
-      onClose={() => goBack(`/project/${project.id}`)}>
+      onClose={() => goBack(`/project/${project.id}`)}
+      sceneLabel={sceneIndex !== undefined && scenesOf(project)[sceneIndex] ? `${sceneName(scenesOf(project)[sceneIndex])} · take ${project.takes.filter((t) => t.scene === sceneIndex).length + 1}` : undefined}
+      lookLabel={cameraLook(project.cameraLook).name}
+      onLook={() => {
+        const i = CAMERA_LOOKS.findIndex((l) => l.id === cameraLook(project.cameraLook).id);
+        const next = CAMERA_LOOKS[(i + 1) % CAMERA_LOOKS.length];
+        apply(project.id, (p) => setCameraLook(p, next.id));
+        haptic.select();
+        playShutter();
+      }}>
       <video
         ref={videoRef}
         muted
@@ -341,6 +354,8 @@ export default function RecordScreen() {
           background: '#000',
           // A selfie preview reads like a mirror; the saved take is not flipped.
           transform: facing === 'user' ? 'scaleX(-1)' : undefined,
+          // The camera look, live. The take itself is saved ungraded.
+          filter: cssFilter(project.cameraLook),
         }}
       />
     </RecorderChrome>
