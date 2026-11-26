@@ -174,6 +174,9 @@ export function SwitchStage({ project }: { project: Project }) {
       {shots.length ? (
         <View style={stageStyles.block}>
           <T v="heading">Shots</T>
+          <T v="caption" c="smoke">
+            One shot a little off? No stress. The editor builds every scene from the best moments across all your takes, and covers a rough spot with another take or a cutaway.
+          </T>
           <View style={styles.grid}>
             {shots.map((s) => (
               <ShotTile key={s.id} shot={s} selected={s.id === shot?.id} onPress={() => select(s)} />

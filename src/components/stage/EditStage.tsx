@@ -128,7 +128,7 @@ export function EditStage({ project }: { project: Project }) {
             <View style={stageStyles.flex}>
               <T v="label">{copying ? 'Watching your video' : 'Copy from a video'}</T>
               <T v="caption" c="smoke">
-                Upload a video you love. I copy its color, how fast it cuts, its flashes and shakes.
+                Upload a video you love. I copy its color, how fast it cuts, its flashes and shakes. See one on YouTube? Screen-record it and upload that.
               </T>
             </View>
           </Press>
