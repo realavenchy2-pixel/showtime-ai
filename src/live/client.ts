@@ -1,5 +1,5 @@
 import type { AgentCommand } from '@/engine/agent';
-import type { BrollModel, LiveCaps } from '@/engine/types';
+import type { BrollModel, LiveCaps, UpscaleLook } from '@/engine/types';
 
 // Talks to the studio server (server/README.md). The server holds the provider keys;
 // this app only ever holds the server's address and an access code.
@@ -16,6 +16,8 @@ export interface ServerCaps {
   broll: BrollModel[];
   director: { model: string } | null;
   references: boolean;
+  /** Topaz looks the server can upscale 1440p and 4K with. Missing on servers from before the upscale. */
+  upscale?: UpscaleLook[];
   locked: boolean;
 }
 
@@ -146,7 +148,7 @@ export async function putFile(cfg: ServerConfig, uploadUrl: string, blob: Blob, 
     headers: { 'content-type': contentType, ...(cfg.key ? { 'x-showtime-key': cfg.key } : {}) },
     body: blob,
   });
-  if (!res.ok) throw new StudioError('The shot could not be uploaded.', res.status, 'UPLOAD_FAILED');
+  if (!res.ok) throw new StudioError('The file could not be uploaded.', res.status, 'UPLOAD_FAILED');
 }
 
 export function startSwitch(
@@ -186,4 +188,18 @@ export async function fetchRender(cfg: ServerConfig, url: string): Promise<Blob>
   const res = await fetch(`${cfg.url}/v1/fetch?url=${encodeURIComponent(url)}`, { headers: cfg.key ? { 'x-showtime-key': cfg.key } : {} });
   if (!res.ok) throw new StudioError('The finished shot could not be downloaded.', res.status, 'DOWNLOAD_FAILED');
   return res.blob();
+}
+
+/** A signed slot in fal storage for a rendered video; the file goes straight there, not through the server. */
+export function upscaleUpload(cfg: ServerConfig, input: { filename: string; contentType: string }): Promise<{ uploadUrl: string; fileUrl: string }> {
+  return call(cfg, 'POST', '/v1/upscale/upload', input);
+}
+
+/** Starts a Topaz upscale of a file already in fal storage. `factor` is how many times bigger, 1 to 4. */
+export function startUpscale(cfg: ServerConfig, job: { videoUrl: string; factor: number; look: UpscaleLook }): Promise<RemoteJob> {
+  return call(cfg, 'POST', '/v1/upscale', job, 60000);
+}
+
+export function upscaleStatus(cfg: ServerConfig, id: string): Promise<RemoteJob> {
+  return call(cfg, 'GET', `/v1/upscale/${encodeURIComponent(id)}`);
 }

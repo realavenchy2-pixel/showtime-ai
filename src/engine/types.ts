@@ -318,6 +318,9 @@ export interface FxCue {
 
 export type Resolution = '720p' | '1080p' | '1440p' | '4K';
 
+/** How 1440p and 4K are upscaled on the studio server: Topaz Proteus (clean) or Topaz Starlight (detail). */
+export type UpscaleLook = 'clean' | 'detail';
+
 /** The artist's plan. Free trial is pay per video with credits; Standard and Premium are subscriptions. */
 export type PlanId = 'Free trial' | 'Standard' | 'Premium';
 
@@ -475,6 +478,8 @@ export interface Project {
     resolution: Resolution;
     done: boolean;
     creditsCharged: number;
+    /** For 1440p and 4K. Clean when unset. */
+    upscaler?: UpscaleLook;
     /** Finished files rendered on this device. */
     files?: { format: Format; mediaId: string; extension: string }[];
   };

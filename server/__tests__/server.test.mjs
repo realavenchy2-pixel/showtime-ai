@@ -6,6 +6,7 @@ import { createApp } from '../src/app.mjs';
 import { createBeeble, normalizeStatus, productInputs } from '../src/beeble.mjs';
 import { createBroll } from '../src/broll.mjs';
 import { cleanCommands, COMMAND_ENUMS, direct } from '../src/claude.mjs';
+import { createUpscale } from '../src/upscale.mjs';
 import { FX_EFFECTS, FX_PACKS } from '../../src/engine/fx';
 import { LOCATIONS } from '../../src/engine/samples';
 import { STAGES } from '../../src/engine/stages';
@@ -177,6 +178,7 @@ describe('The studio server', () => {
       broll: ['h3'],
       director: { model: 'claude-sonnet-5-5' },
       references: false,
+      upscale: ['clean', 'detail'],
       locked: true,
     });
   });
@@ -332,5 +334,98 @@ describe('B-roll', () => {
   it('offers Omni when a Gemini key is set, and nothing when no key is', () => {
     expect(createBroll({ geminiKey: 'g' }).models()).toEqual(['omni']);
     expect(createBroll({}).models()).toEqual([]);
+  });
+});
+
+describe('Upscale', () => {
+  const queued = (name) => ({
+    request_id: name,
+    status_url: `https://queue.fal.run/fal-ai/topaz/requests/${name}/status`,
+    response_url: `https://queue.fal.run/fal-ai/topaz/requests/${name}`,
+  });
+
+  it('hands out a signed upload slot in fal storage', async () => {
+    const fetch = fakeFetch({ 'POST /storage/upload/initiate': { upload_url: 'https://v3b.fal.media/upload/abc?sig=1', file_url: 'https://v3b.fal.media/files/abc/video.mp4' } });
+    const up = createUpscale({ falKey: 'fk', fetch });
+    expect(await up.upload({ filename: 'video.mp4', contentType: 'video/mp4' })).toEqual({ uploadUrl: 'https://v3b.fal.media/upload/abc?sig=1', fileUrl: 'https://v3b.fal.media/files/abc/video.mp4' });
+    expect(fetch.calls[0].url).toBe('https://rest.alpha.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3');
+    expect(fetch.calls[0].headers.Authorization).toBe('Key fk');
+    expect(fetch.calls[0].body).toEqual({ content_type: 'video/mp4', file_name: 'video.mp4' });
+    await expect(up.upload({ filename: 'notes.txt' })).rejects.toThrow(/mp4/);
+  });
+
+  it('runs Proteus for the clean look and Starlight for max detail, both in H.264', async () => {
+    const fetch = fakeFetch({
+      'POST queue.fal.run/fal-ai/topaz/upscale/video': queued('c1'),
+      'POST queue.fal.run/topaz/upscale/video/generative': queued('d1'),
+    });
+    const up = createUpscale({ falKey: 'fk', fetch });
+    expect(up.looks()).toEqual(['clean', 'detail']);
+    const clean = await up.start({ videoUrl: 'https://v3b.fal.media/files/abc/video.mp4', factor: 2 });
+    expect(clean).toMatchObject({ status: 'queued', look: 'clean' });
+    expect(fetch.calls[0].body).toEqual({ video_url: 'https://v3b.fal.media/files/abc/video.mp4', model: 'Proteus', upscale_factor: 2, H264_output: true });
+    const detail = await up.start({ videoUrl: 'https://v3b.fal.media/files/abc/video.mp4', factor: 4 / 3, look: 'detail' });
+    expect(detail.look).toBe('detail');
+    expect(fetch.calls[1].url).toBe('https://queue.fal.run/topaz/upscale/video/generative');
+    expect(fetch.calls[1].body).toEqual({ video_url: 'https://v3b.fal.media/files/abc/video.mp4', upscale_factor: 1.333, H264_output: true });
+  });
+
+  it('only upscales files fal holds, by 1 to 4 times', async () => {
+    const up = createUpscale({ falKey: 'fk', fetch: fakeFetch({}) });
+    await expect(up.start({ videoUrl: 'https://example.com/video.mp4', factor: 2 })).rejects.toThrow(/fal storage/);
+    await expect(up.start({ videoUrl: 'https://v3b.fal.media/files/a.mp4', factor: 6 })).rejects.toThrow(/between 1 and 4/);
+    await expect(up.status('u:' + btoa(JSON.stringify(['https://evil.test/s', 'https://evil.test/r'])))).rejects.toThrow(/Unexpected/);
+    await expect(up.status('nope')).rejects.toThrow(/Unknown/);
+  });
+
+  it('reports where the upscale stands and hands back the finished file', async () => {
+    let state = 'IN_QUEUE';
+    const fetch = fakeFetch({
+      'POST queue.fal.run/fal-ai/topaz/upscale/video': queued('c1'),
+      'GET /requests/c1/status': () => ({ status: state }),
+      'GET /requests/c1': { video: { url: 'https://v3b.fal.media/files/out/upscaled.mp4' } },
+    });
+    const up = createUpscale({ falKey: 'fk', fetch });
+    const { id } = await up.start({ videoUrl: 'https://v3b.fal.media/files/abc/video.mp4', factor: 2 });
+    expect((await up.status(id)).status).toBe('queued');
+    state = 'IN_PROGRESS';
+    expect((await up.status(id)).status).toBe('rendering');
+    state = 'COMPLETED';
+    expect(await up.status(id)).toEqual({ id, status: 'ready', url: 'https://v3b.fal.media/files/out/upscaled.mp4' });
+  });
+
+  it('says so when the upscale fails or fal is not set up', async () => {
+    const fetch = fakeFetch({
+      'POST queue.fal.run/fal-ai/topaz/upscale/video': queued('c2'),
+      'GET /requests/c2/status': { status: 'FAILED', error: 'Video too long' },
+    });
+    const up = createUpscale({ falKey: 'fk', fetch });
+    const { id } = await up.start({ videoUrl: 'https://v3b.fal.media/files/abc/video.mp4', factor: 2 });
+    expect(await up.status(id)).toEqual({ id, status: 'failed', error: 'Video too long' });
+    const off = createUpscale({});
+    expect(off.looks()).toEqual([]);
+    await expect(off.upload({ filename: 'video.mp4' })).rejects.toMatchObject({ status: 501 });
+  });
+
+  it('serves the upscale under the access code', async () => {
+    const fetch = fakeFetch({
+      'POST /storage/upload/initiate': { upload_url: 'https://v3b.fal.media/upload/x', file_url: 'https://v3b.fal.media/files/x/video.mp4' },
+      'POST queue.fal.run/fal-ai/topaz/upscale/video': queued('c3'),
+      'GET /requests/c3/status': { status: 'COMPLETED' },
+      'GET /requests/c3': { video: { url: 'https://v3b.fal.media/files/out/c3.mp4' } },
+    });
+    const app = createApp({ FAL_KEY: 'fk', SHOWTIME_APP_KEY: 'door' }, { fetch });
+    const call = (method, path, body) =>
+      app(new Request(`https://studio.test${path}`, { method, headers: { 'content-type': 'application/json', 'x-showtime-key': 'door' }, body: body ? JSON.stringify(body) : undefined }));
+    const slot = await (await call('POST', '/v1/upscale/upload', { filename: 'video.mp4', contentType: 'video/mp4' })).json();
+    expect(slot.fileUrl).toBe('https://v3b.fal.media/files/x/video.mp4');
+    const job = await (await call('POST', '/v1/upscale', { videoUrl: slot.fileUrl, factor: 2, look: 'clean' })).json();
+    const done = await (await call('GET', `/v1/upscale/${encodeURIComponent(job.id)}`)).json();
+    expect(done).toMatchObject({ status: 'ready', url: 'https://v3b.fal.media/files/out/c3.mp4' });
+    const locked = await app(new Request('https://studio.test/v1/upscale', { method: 'POST', body: '{}' }));
+    expect(locked.status).toBe(401);
+    const bare = createApp({}, { fetch: fakeFetch({}) });
+    const off = await bare(new Request('https://studio.test/v1/upscale/upload', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ filename: 'video.mp4' }) }));
+    expect(off.status).toBe(501);
   });
 });
