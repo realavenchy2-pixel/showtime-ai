@@ -22,7 +22,7 @@ interface Props {
   rounded?: boolean;
 }
 
-const RATIO: Record<Format, number> = { '16:9': 16 / 9, '9:16': 9 / 16, '1:1': 1 };
+const RATIO: Record<Format, number> = { '16:9': 16 / 9, '9:16': 9 / 16, '1:1': 1, '4:5': 4 / 5 };
 
 /** A video frame: a still of real footage, or the drawn set for sample projects. */
 export function Frame({ kind, thumb, format = '16:9', label, relit, behindText, noArtist, style, children, rounded = true }: Props) {

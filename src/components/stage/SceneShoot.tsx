@@ -77,7 +77,9 @@ function SceneBlock({ project, scene, open }: { project: Project; scene: Scene; 
   const best = bestTake(project, scene.index);
   const guide = project.guides?.[scene.index];
   // Scene 1 places the video in the song, so it goes first.
-  const waiting = project.takes.length === 0 && scene.index > 0;
+  const waiting = project.takes.length === 0 && scene.index > 0 && !project.partPicked;
+  // The background is locked first, so you know exactly where you're going.
+  const needsBackground = !!scene.look?.options?.length && !scene.look.locationLocked;
   const ref = locationRef(scene.look);
   const kind = scene.look && scene.look.location !== 'custom' ? scene.look.location : 'darkVoid';
   const record = () => router.push(`/project/${project.id}/record?scene=${scene.index}`);
@@ -142,7 +144,7 @@ function SceneBlock({ project, scene, open }: { project: Project; scene: Scene; 
         <Button label="Unlock to shoot more" variant="quiet" onPress={() => apply(project.id, (p) => unlockScene(p, scene.index))} />
       ) : (
         <View style={styles.actions}>
-          <Button label={takes.length ? `Another take` : `Record scene ${scene.index + 1}`} variant={open ? 'primary' : 'secondary'} disabled={waiting} style={styles.flex} onPress={record} />
+          <Button label={takes.length ? `Another take` : `Record scene ${scene.index + 1}`} variant={open ? 'primary' : 'secondary'} disabled={waiting || needsBackground} style={styles.flex} onPress={record} />
           {takes.length ? (
             <Button
               label="Lock scene"
@@ -157,6 +159,9 @@ function SceneBlock({ project, scene, open }: { project: Project; scene: Scene; 
           ) : null}
         </View>
       )}
+      {needsBackground ? (
+        <Button label="Lock this scene's background first" variant="quiet" onPress={() => router.push(`/project/${project.id}/looks`)} />
+      ) : null}
       {waiting ? (
         <T v="caption" c="ash">
           Shoot scene 1 first: it sets where the video starts in the song.

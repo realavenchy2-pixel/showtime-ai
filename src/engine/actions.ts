@@ -1,6 +1,6 @@
 import { arrangeBroll, buildShots, cutawaySec, missingShots } from './broll';
 import { formatTime, jobResult, stageIntro, takeLine } from './director';
-import { emptyEffects, planForPack } from './fx';
+import { emptyEffects, planForPack, planFromCopied } from './fx';
 import {
   barSec,
   DEFAULT_TAKE_PLAN,
@@ -21,6 +21,7 @@ import type {
   FxEffectId,
   FxIntensity,
   FxPackId,
+  FxPlan,
   Format,
   Job,
   LiveCaps,
@@ -133,6 +134,19 @@ export function setVideoLength(p: Project, length: VideoLength): Project {
   return setRange({ ...p, length }, rangeFor(p.song, videoRange(p).start, length));
 }
 
+/**
+ * The part of the song, picked in the plan: a snippet (any length, anywhere) or the full song with
+ * a little trimmed off either end. Once picked, the first take no longer places the video.
+ */
+export function pickPart(p: Project, length: VideoLength, range: { start: number; end: number }): Project {
+  const song = p.song;
+  if (!song || p.planApproved || p.job) return p;
+  const start = clamp(range.start, 0, Math.max(0, song.durationSec - 2));
+  const end = clamp(range.end, start + 2, song.durationSec);
+  const whole = start < 0.05 && end > song.durationSec - 0.05;
+  return { ...setRange({ ...p, length }, whole ? undefined : { start, end }), length, partPicked: true };
+}
+
 /** What the artist typed into the plan, kept as they go so it is there when they come back. */
 export function setBrief(p: Project, text: string): Project {
   if (p.planApproved) return p;
@@ -145,7 +159,7 @@ export function setBrief(p: Project, text: string): Project {
  */
 function placeVideo(p: Project, start: number): Project {
   const song = p.song;
-  if (!song || !p.length || p.takes.length > 0) return p;
+  if (!song || !p.length || p.takes.length > 0 || p.partPicked) return p;
   const range = rangeFor(song, start, p.length);
   if (JSON.stringify(range) === JSON.stringify(p.range)) return p;
   const scened = song.sections.some((s) => s.scene);
@@ -901,6 +915,12 @@ function fillIn(before: Project, p: Project): Project {
 
 // ---------- Edit ----------
 
+/** The effects copied from a video the artist uploaded become the pack. */
+export function setCopiedFx(p: Project, copied: NonNullable<FxPlan['copied']>): Project {
+  if (p.final.locked) return p;
+  return { ...p, fx: planFromCopied(copied, p.fx.intensity) };
+}
+
 export function setFxPack(p: Project, pack: FxPackId): Project {
   if (p.final.locked) return p;
   return { ...p, fx: planForPack(pack, p.fx.intensity) };
@@ -947,7 +967,9 @@ export function setResolution(p: Project, resolution: Resolution): Project {
 
 /** Credits an export costs: 1 per video, 1 more for 4K unless the plan includes it. */
 export function exportCost(p: Project, fourKIncluded = false): number {
-  return p.exportState.resolution === '4K' && !fourKIncluded ? 2 : 1;
+  // 1440p and 4K finish on the studio server with an upscale, so they cost a credit more.
+  const big = p.exportState.resolution === '4K' || p.exportState.resolution === '1440p';
+  return big && !fourKIncluded ? 2 : 1;
 }
 
 export function exportVideo(p: Project, cost = exportCost(p), opts: { external?: boolean } = {}): Project {

@@ -10,7 +10,7 @@ export type LocationKind = 'beach' | 'alley' | 'whiteVoid' | 'darkVoid' | 'hangi
 
 export type Vibe = 'Drill' | 'Trap' | 'Melodic' | 'Boom bap' | 'Dark';
 
-export type Format = '16:9' | '9:16' | '1:1';
+export type Format = '16:9' | '9:16' | '1:1' | '4:5';
 
 /** A snippet (about 30 seconds) or the full song from wherever the artist starts. */
 export type VideoLength = 'snippet' | 'full';
@@ -146,6 +146,10 @@ export interface Look {
   prompt: string;
   /** Up to four reference images. */
   refs: RefImage[];
+  /** Background options generated for this scene before the shoot (no artist in them). The picked one is the location ref. */
+  options?: RefImage[];
+  /** The artist locked this scene's background. */
+  locationLocked?: boolean;
 }
 
 /** How SwitchX decides what to keep from the source. */
@@ -223,7 +227,7 @@ export interface BrollIdea {
   mediaId?: string;
 }
 
-export type FxPackId = 'drill' | 'trapHype' | 'melodic' | 'boomBap' | 'dark';
+export type FxPackId = 'drill' | 'trapHype' | 'melodic' | 'boomBap' | 'dark' | 'copied';
 export type FxIntensity = 'Clean' | 'Hype' | 'Unhinged';
 export type FxEffectId =
   | 'punchIn'
@@ -237,8 +241,22 @@ export type FxEffectId =
   | 'textBehind'
   | 'glowOutline';
 
+/** Effects copied from a video the artist uploaded: its color, its pace, its hits. */
+export interface CopiedFx {
+  title: string;
+  feel: string;
+  effects: FxEffectId[];
+  density: number[];
+  grade: { temp: number; tint: number; contrast: number; saturation: number; crush: number; grain: number; vignette: number };
+  letterbox: boolean;
+  /** Cuts per second in the source video. */
+  cutsPerSec: number;
+}
+
 export interface FxPlan {
   pack?: FxPackId;
+  /** Set when pack is 'copied'. */
+  copied?: CopiedFx;
   intensity: FxIntensity;
   effects: Record<FxEffectId, boolean>;
 }
@@ -253,7 +271,7 @@ export interface FxCue {
   amount: number;
 }
 
-export type Resolution = '1080p' | '4K';
+export type Resolution = '720p' | '1080p' | '1440p' | '4K';
 
 export interface Job {
   id: string;
@@ -317,6 +335,18 @@ export interface SetGuide {
   light: 'left' | 'right' | 'behind camera' | 'overhead';
   /** Plain steps, said once before the scene. */
   steps: string[];
+  /** Stand-ins for what the scene needs you to hold, lean on or sit in (a broom for a mic stand). */
+  props?: Prop[];
+}
+
+export type PropKind = 'bar' | 'stand' | 'seat' | 'wall' | 'table' | 'steps';
+
+export interface Prop {
+  kind: PropKind;
+  /** What it stands in for, in the scene. */
+  for: string;
+  /** What to use at home and how. */
+  say: string;
 }
 
 export type LibraryKind = 'location' | 'startFrame' | 'still' | 'broll';
@@ -407,6 +437,17 @@ export interface Project {
   planIdeas?: PlanIdea[];
   /** A link to a video the artist wants it to feel like. */
   inspiration?: string;
+  /** The part of the song was picked in the plan, so the first take doesn't place the video. */
+  partPicked?: boolean;
+  /** What the song is about and its message, in the artist's words. Explicit is fine. */
+  songAbout?: string;
+  songMessage?: string;
+  /** Things the video has to have, one per line ("at least one scene on the moon"). */
+  mustHaves?: string;
+  /** The artist's own reference images for the video, on either path. */
+  planRefs?: RefImage[];
+  /** How many background options to generate per scene, 1 to 4. */
+  locationCount?: number;
   /** The camera look, applied on render. Footage is always saved ungraded. */
   cameraLook?: CameraLookId;
   /** One set guide per scene, in scene order. Made when the plan locks. */

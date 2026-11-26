@@ -143,42 +143,68 @@ export function cssFilter(id: CameraLookId | undefined): string {
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
+/** ACES filmic curve (Narkowicz fit): soft toe, long highlight shoulder, the way cinema cameras roll off. */
+function aces(x: number): number {
+  const a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return Math.max(0, (x * (a * x + b)) / (x * (c * x + d) + e));
+}
+
+function hueOf(r: number, g: number, b: number): number {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  if (d < 1e-6) return 0;
+  const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
+
 /**
- * The look applied to one color, 0 to 1 per channel. Mirrors the compositor's grade, plus split toning
- * and highlight roll-off. Used to write the .cube LUTs.
+ * The look applied to one color, 0 to 1 per channel, for the .cube LUTs. A small cinema pipeline:
+ * linearize the phone's Rec.709, white balance, a filmic tone curve with a soft highlight shoulder,
+ * saturation that protects skin and fades into the highlights, then split toning. Same parameters
+ * as the compositor's grade, built the way colorists build camera LUTs.
  */
 export function gradeColor(id: CameraLookId | undefined, rgb: [number, number, number]): [number, number, number] {
   const look = cameraLook(id);
   const g = look.grade;
-  let [r, gr, b] = rgb;
-  r += g.temp * 0.07;
-  b -= g.temp * 0.07;
-  gr -= g.tint * 0.03;
-  r += g.tint * 0.02;
-  b += g.tint * 0.02;
-  const luma0 = 0.299 * r + 0.587 * gr + 0.114 * b;
-  const sat = g.saturation * 2;
-  r = luma0 + (r - luma0) * sat;
-  gr = luma0 + (gr - luma0) * sat;
-  b = luma0 + (b - luma0) * sat;
-  const k = 0.6 + g.contrast * 0.8;
-  const crush = g.crush * 0.09;
-  const tone = (x: number) => {
-    let y = (x - 0.5) * k + 0.5;
-    y = (y - crush) / (1 - crush);
-    // Soft shoulder: highlights roll off instead of clipping.
-    if (look.rolloff > 0 && y > 0.7) {
-      const over = y - 0.7;
-      y = 0.7 + over / (1 + over * look.rolloff * 3);
-    }
-    return y;
+  if (look.id === 'natural') return rgb;
+  // 1. To linear light.
+  let [r, gr, b] = rgb.map((v) => Math.pow(Math.max(0, v), 2.2)) as [number, number, number];
+  // 2. White balance: warm pulls red up and blue down; tint trades green for magenta.
+  r *= 1 + g.temp * 0.22 + g.tint * 0.04;
+  b *= 1 - g.temp * 0.22 + g.tint * 0.04;
+  gr *= 1 - g.tint * 0.08;
+  // 3. Filmic tone curve. Exposure lifts mids into the curve; contrast steepens it; roll-off softens the shoulder.
+  const exposure = 0.78 + (1 - look.rolloff) * 0.12;
+  const k = 0.7 + g.contrast * 0.9;
+  const curve = (x: number) => {
+    const filmic = aces(x * exposure);
+    const pivot = 0.18;
+    const contrasted = pivot * Math.pow(Math.max(1e-6, filmic) / pivot, k * 0.55 + 0.45);
+    return Math.min(1, contrasted);
   };
-  r = tone(r);
-  gr = tone(gr);
-  b = tone(b);
-  const luma = clamp01(0.299 * r + 0.587 * gr + 0.114 * b);
-  const sh = (1 - luma) * (1 - luma);
-  const hi = luma * luma;
+  r = curve(r);
+  gr = curve(gr);
+  b = curve(b);
+  // 4. Back to display.
+  [r, gr, b] = [r, gr, b].map((v) => Math.pow(Math.max(0, v), 1 / 2.2)) as [number, number, number];
+  // 5. Black level: crushed blacks sit a touch lower, then lift back so they never clip hard.
+  const crush = g.crush * 0.06;
+  [r, gr, b] = [r, gr, b].map((v) => Math.max(0, (v - crush) / (1 - crush))) as [number, number, number];
+  // 6. Saturation: skin tones move half as much; highlights and deep shadows lose color first.
+  const luma = 0.2126 * r + 0.7152 * gr + 0.0722 * b;
+  const hue = hueOf(r, gr, b);
+  const skin = Math.exp(-(((hue - 28) / 20) ** 2));
+  const target = g.saturation * 2;
+  const amount = 1 + (target - 1) * (1 - 0.5 * skin);
+  const highFade = luma > 0.8 ? 1 - (luma - 0.8) / 0.2 * 0.6 : 1;
+  const shadowFade = luma < 0.06 ? 0.7 + (luma / 0.06) * 0.3 : 1;
+  const sat = amount * highFade * shadowFade;
+  r = luma + (r - luma) * sat;
+  gr = luma + (gr - luma) * sat;
+  b = luma + (b - luma) * sat;
+  // 7. Split toning: color into the shadows and the highlights, weighted by brightness.
+  const l2 = clamp01(0.2126 * r + 0.7152 * gr + 0.0722 * b);
+  const sh = (1 - l2) * (1 - l2);
+  const hi = l2 * l2;
   r += look.shadows[0] * sh + look.highlights[0] * hi;
   gr += look.shadows[1] * sh + look.highlights[1] * hi;
   b += look.shadows[2] * sh + look.highlights[2] * hi;

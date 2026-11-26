@@ -55,7 +55,7 @@ export interface Composition {
 }
 
 export function aspectOf(format: Format): number {
-  return format === '16:9' ? 16 / 9 : format === '9:16' ? 9 / 16 : 1;
+  return format === '16:9' ? 16 / 9 : format === '9:16' ? 9 / 16 : format === '4:5' ? 4 / 5 : 1;
 }
 
 /** The format the studio previews in: wide when the artist posts wide, otherwise the first one picked. */
@@ -152,7 +152,7 @@ export function buildComposition(p: Project, opts: CompositionOptions = {}): Com
   }
 
   const effects = opts.effects ?? p.final.builds > 0;
-  const pack = effects ? fxPack(p.fx.pack) : undefined;
+  const pack = effects ? fxPack(p.fx.pack, p.fx) : undefined;
   const range = videoRange(p);
   return {
     title: p.title,

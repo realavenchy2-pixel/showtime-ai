@@ -5,6 +5,7 @@ import { Check } from '@/components/icons';
 import { CAMERA_LOOKS, cameraLook } from '@/engine/cameraLooks';
 import type { CameraLookId } from '@/engine/types';
 import { haptic } from '@/lib/haptics';
+import { playShutter } from '@/lib/shutter';
 import { LOOK_PREVIEW } from '@/lib/lookPreviews';
 import { color, radius, space } from '@/theme/tokens';
 
@@ -27,6 +28,7 @@ export function CameraLookPicker({ value, onChange, compact }: { value?: CameraL
               key={look.id}
               onPress={() => {
                 haptic.select();
+                playShutter();
                 onChange(look.id);
               }}
               scaleTo={0.97}

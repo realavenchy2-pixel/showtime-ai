@@ -124,8 +124,16 @@ export function planForPack(pack: FxPackId, intensity: FxIntensity): FxPlan {
   return { pack, intensity, effects };
 }
 
-export function fxPack(id: FxPackId | undefined): FxPack | undefined {
+export function fxPack(id: FxPackId | undefined, plan?: Pick<FxPlan, 'copied'>): FxPack | undefined {
+  if (id === 'copied') return plan?.copied ? { id: 'copied', ...plan.copied } : undefined;
   return FX_PACKS.find((p) => p.id === id);
+}
+
+/** Uses the effects copied from a video as the pack. */
+export function planFromCopied(copied: NonNullable<FxPlan['copied']>, intensity: FxIntensity): FxPlan {
+  const effects = emptyEffects();
+  for (const id of copied.effects) effects[id] = true;
+  return { pack: 'copied', copied, intensity, effects };
 }
 
 // ---------- Cues ----------

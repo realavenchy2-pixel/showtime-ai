@@ -10,6 +10,7 @@ import { showToast } from '@/components/Toast';
 import { CAMERA_LOOKS, cameraLook, cssFilter } from '@/engine/cameraLooks';
 import { scenesOf, sceneName, setCameraLook } from '@/engine/production';
 import { useApp, useProject } from '@/engine/store';
+import { playShutter } from '@/lib/shutter';
 import type { Song } from '@/engine/types';
 import { addRecorded } from '@/lib/footage';
 import { haptic } from '@/lib/haptics';
@@ -337,6 +338,7 @@ export default function RecordScreen() {
         const next = CAMERA_LOOKS[(i + 1) % CAMERA_LOOKS.length];
         apply(project.id, (p) => setCameraLook(p, next.id));
         haptic.select();
+        playShutter();
       }}>
       <video
         ref={videoRef}

@@ -19,7 +19,7 @@ function onBeat(p: Project, t: number): number {
 export function useTakeRange(p: Project | undefined, sceneIndex?: number) {
   const [startAt, setStartAt] = useState<number | undefined>();
   const song = p?.song;
-  const placing = !!p && !!song && !!p.length && p.takes.length === 0;
+  const placing = !!p && !!song && !!p.length && p.takes.length === 0 && !p.partPicked;
   // Shooting one scene: the take covers that scene. Before the video is placed, scene 1 starts wherever the artist picks.
   const scene = p && sceneIndex !== undefined ? scenesOf(p)[sceneIndex] : undefined;
   const sceneLen = scene ? scene.section.end - scene.section.start : 0;

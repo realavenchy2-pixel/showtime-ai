@@ -108,9 +108,52 @@ export function SetGuide3D({ guide, height = 240, compact }: Props) {
             <Line x1={mx - 10} y1={my - 5} x2={mx + 10} y2={my + 5} stroke={color.accent} strokeWidth={3} />
             <Line x1={mx - 10} y1={my + 5} x2={mx + 10} y2={my - 5} stroke={color.accent} strokeWidth={3} />
           </G>
+          {/* Props: what you hold, sit on or lean on */}
+          {(guide.props ?? []).map((pr) => {
+            if (pr.kind === 'bar') {
+              const [a1, a2] = [P([-0.7, 2.05, 0]), P([0.7, 2.05, 0])];
+              const [f1, f2] = [P([-0.7, 0, 0]), P([0.7, 0, 0])];
+              return (
+                <G key="bar">
+                  <Line x1={f1[0]} y1={f1[1]} x2={a1[0]} y2={a1[1]} stroke="#FFD27A" strokeWidth={2} />
+                  <Line x1={f2[0]} y1={f2[1]} x2={a2[0]} y2={a2[1]} stroke="#FFD27A" strokeWidth={2} />
+                  <Line x1={a1[0]} y1={a1[1]} x2={a2[0]} y2={a2[1]} stroke="#FFD27A" strokeWidth={4} />
+                </G>
+              );
+            }
+            if (pr.kind === 'stand') {
+              const [b0, b1] = [P([0.05, 0, 0.45]), P([0.05, 1.55, 0.45])];
+              return (
+                <G key="stand">
+                  <Line x1={b0[0]} y1={b0[1]} x2={b1[0]} y2={b1[1]} stroke="#FFD27A" strokeWidth={3} />
+                  <Circle cx={b1[0]} cy={b1[1]} r={5} fill="#FFD27A" />
+                </G>
+              );
+            }
+            if (pr.kind === 'seat' || pr.kind === 'table' || pr.kind === 'steps') {
+              const h = pr.kind === 'table' ? 0.9 : pr.kind === 'steps' ? 0.25 : 0.45;
+              const z0 = pr.kind === 'table' ? 0.35 : -0.25;
+              const top: Vec[] = [[-0.3, h, z0 - 0.25], [0.3, h, z0 - 0.25], [0.3, h, z0 + 0.25], [-0.3, h, z0 + 0.25]];
+              return <Polygon key={pr.kind} points={pts(top)} fill="rgba(255,210,122,0.25)" stroke="#FFD27A" strokeWidth={2} />;
+            }
+            if (pr.kind === 'wall') {
+              const rail: Vec[] = [[-1.2, 1.0, back + 0.05], [1.2, 1.0, back + 0.05]];
+              const [r1, r2] = [P(rail[0]), P(rail[1])];
+              return <Line key="wall" x1={r1[0]} y1={r1[1]} x2={r2[0]} y2={r2[1]} stroke="#FFD27A" strokeWidth={4} />;
+            }
+            return null;
+          })}
           {/* You */}
           <Line x1={mx} y1={my} x2={hx} y2={hy + headR} stroke={color.chalk} strokeWidth={Math.max(4, headR * 0.9)} strokeLinecap="round" />
           <Circle cx={hx} cy={hy} r={headR} fill={color.chalk} />
+          {guide.props?.some((pr) => pr.kind === 'bar') ? (
+            <>
+              {[[-0.35, 1.5, 0, -0.55, 2.05, 0], [0.35, 1.5, 0, 0.55, 2.05, 0]].map((a, i) => {
+                const [s1, s2] = [P([a[0], a[1], a[2]]), P([a[3], a[4], a[5]])];
+                return <Line key={i} x1={s1[0]} y1={s1[1]} x2={s2[0]} y2={s2[1]} stroke={color.chalk} strokeWidth={3} strokeLinecap="round" />;
+              })}
+            </>
+          ) : null}
           {/* Tripod and phone */}
           <Line x1={cfx} y1={cfy} x2={cxp} y2={cyp} stroke={color.smoke} strokeWidth={2} />
           <Polygon
