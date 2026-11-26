@@ -60,6 +60,14 @@ interface Props {
   /** The camera look on the viewfinder. Tapping it moves to the next one. */
   lookLabel?: string;
   onLook?: () => void;
+  /** Pro camera: frame lines and exposure tools over the picture, under the controls. */
+  viewfinder?: ReactNode;
+  /** Pro camera: standby or REC with timecode, in place of the plain status line. */
+  status?: ReactNode;
+  /** Pro camera: scopes, the tool rail and lens sliders, on top of everything. */
+  tools?: ReactNode;
+  /** Pro camera: recording time left, shown beside the camera look. */
+  readout?: string;
 }
 
 const RING = 2 * Math.PI * 42;
@@ -93,7 +101,7 @@ function currentLines(lines: LyricLine[], t: number): { current?: LyricLine; nex
 
 /** Everything on top of the camera: the take, the count-in, the prompter, the song and the record button. */
 export function RecorderChrome(props: Props) {
-  const { phase, beat, song, songTime, from, to, takes, planned, placing, custom, video, peaks, blocked, listening, onFromTop, onStartAt, onScrub, onStartHere, onListen, onRecord, onStop, onFlip, onClose, children, sceneLabel, lookLabel, onLook } = props;
+  const { phase, beat, song, songTime, from, to, takes, planned, placing, custom, video, peaks, blocked, listening, onFromTop, onStartAt, onScrub, onStartHere, onListen, onRecord, onStop, onFlip, onClose, children, sceneLabel, lookLabel, onLook, viewfinder, status, tools, readout } = props;
   const insets = useSafeAreaInsets();
   const [stripWidth, setStripWidth] = useState(0);
   const [sliding, setSliding] = useState(false);
@@ -132,6 +140,7 @@ export function RecorderChrome(props: Props) {
   return (
     <View style={styles.page}>
       <View style={StyleSheet.absoluteFill}>{children}</View>
+      {viewfinder}
 
       <LinearGradient colors={['rgba(0,0,0,0.72)', 'rgba(0,0,0,0)']} style={[styles.top, { paddingTop: insets.top + space.s }]} pointerEvents="box-none">
         <View style={styles.topRow}>
@@ -139,7 +148,9 @@ export function RecorderChrome(props: Props) {
             <X size={24} color={color.chalk} />
           </Press>
           <View style={styles.topText}>
-            {recording ? (
+            {status ? (
+              status
+            ) : recording ? (
               <View style={styles.rec}>
                 <View style={styles.recDot} />
                 <T v="micro" style={styles.tabular}>{`REC ${formatTime(Math.max(0, songTime - from))}`}</T>
@@ -159,7 +170,7 @@ export function RecorderChrome(props: Props) {
             <View style={styles.iconBtn} />
           )}
         </View>
-              {sceneLabel || lookLabel ? (
+              {sceneLabel || lookLabel || readout ? (
           <View style={styles.pills} pointerEvents="box-none">
             {sceneLabel ? (
               <View style={styles.topPill}>
@@ -172,6 +183,11 @@ export function RecorderChrome(props: Props) {
               <Press onPress={onLook} disabled={!onLook || recording} style={[styles.topPill, styles.lookPill]} accessibilityLabel={`Camera look: ${lookLabel}. Tap for the next camera`}>
                 <T v="micro" c="chalk">{`Camera · ${lookLabel}`}</T>
               </Press>
+            ) : null}
+            {readout ? (
+              <View style={styles.topPill} accessibilityLabel={`Recording time left: ${readout}`}>
+                <T v="micro" c="smoke" style={styles.tabular}>{`Rem ${readout}`}</T>
+              </View>
             ) : null}
           </View>
         ) : null}
@@ -363,6 +379,7 @@ export function RecorderChrome(props: Props) {
           </View>
         </View>
       </LinearGradient>
+      {tools}
     </View>
   );
 }

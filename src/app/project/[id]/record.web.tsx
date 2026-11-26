@@ -3,6 +3,7 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { Button } from '@/components/Button';
+import { useProCamera } from '@/components/record/proCamera';
 import { RecorderChrome, type RecorderPhase } from '@/components/record/RecorderChrome';
 import { goBack } from '@/components/Screen';
 import { T } from '@/components/T';
@@ -61,21 +62,32 @@ export default function RecordScreen() {
   const [facing, setFacing] = useState<Facing>('user');
   const [peaks, setPeaks] = useState<number[] | undefined>(project?.song?.peaks);
   const [listening, setListening] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
 
   const song = project?.song;
   const take = useTakeRange(project, sceneIndex);
   const { from, to } = take;
   const listenUntil = take.bounds.end;
   const n = project?.takes.length ?? 0;
+  const pro = useProCamera({
+    videoRef,
+    stream,
+    mirrored: facing === 'user',
+    formats: project?.formats ?? [],
+    recording: phase === 'recording',
+    elapsedSec: Math.max(0, songTime - from),
+    hidden: phase === 'opening' || phase === 'blocked',
+  });
 
   // Camera: open once, close on the way out.
   useEffect(() => {
     let live = true;
     if (!cameraSupported()) return;
-    const attach = (stream: MediaStream) => {
+    const attach = (next: MediaStream) => {
+      setStream(next);
       const el = videoRef.current;
       if (!el) return;
-      el.srcObject = stream;
+      el.srcObject = next;
       void el.play().catch(() => {});
     };
     CameraSession.open('user').then(
@@ -339,7 +351,11 @@ export default function RecordScreen() {
         apply(project.id, (p) => setCameraLook(p, next.id));
         haptic.select();
         playShutter();
-      }}>
+      }}
+      viewfinder={pro.viewfinder}
+      status={pro.status}
+      tools={pro.tools}
+      readout={pro.readout}>
       <video
         ref={videoRef}
         muted
@@ -350,7 +366,8 @@ export default function RecordScreen() {
           inset: 0,
           width: '100%',
           height: '100%',
-          objectFit: 'cover',
+          // Pro mode shows the whole recorded frame, the way a camera monitor does.
+          objectFit: pro.fit,
           background: '#000',
           // A selfie preview reads like a mirror; the saved take is not flipped.
           transform: facing === 'user' ? 'scaleX(-1)' : undefined,

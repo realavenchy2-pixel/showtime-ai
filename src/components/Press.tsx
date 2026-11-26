@@ -16,7 +16,7 @@ interface Props extends Omit<PressableProps, 'style' | 'children'> {
 const curve = Easing.bezier(...easeOut);
 
 /** Every touchable in the app: sinks a little on press, springs back on release. */
-export function Press({ style, children, scaleTo = 0.97, onPressIn, onPressOut, disabled, accessibilityRole, ...rest }: Props) {
+export function Press({ style, children, scaleTo = 0.97, onPressIn, onPressOut, disabled, accessibilityRole, accessibilityState, ...rest }: Props) {
   const reduced = useReducedMotion();
   const scale = useSharedValue(1);
   const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
@@ -26,7 +26,8 @@ export function Press({ style, children, scaleTo = 0.97, onPressIn, onPressOut, 
       {...rest}
       disabled={disabled}
       accessibilityRole={accessibilityRole ?? 'button'}
-      accessibilityState={{ disabled: !!disabled }}
+      // Keep selected and checked states from the caller; disabled always reflects the prop.
+      accessibilityState={{ ...accessibilityState, disabled: !!disabled }}
       onPressIn={(e) => {
         if (!reduced) scale.set(withTiming(scaleTo, { duration: 120, easing: curve }));
         onPressIn?.(e);
