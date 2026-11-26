@@ -1,9 +1,11 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Check, Clock, Flag, X } from '@/components/icons';
 import { approveAllShots, approveShot, redoShot, setSwitchSettings, startSwitch } from '@/engine/actions';
 import { formatTime } from '@/engine/director';
+import { scenesOf } from '@/engine/production';
 import { locationTitle } from '@/engine/samples';
 import { stageStatus } from '@/engine/stages';
 import { useApp } from '@/engine/store';
@@ -54,7 +56,9 @@ export function SwitchStage({ project }: { project: Project }) {
   const ready = shots.filter((s) => s.status === 'ready').length;
   const failed = shots.filter((s) => s.status === 'failed');
   const editable = shots.length === 0 && !project.job;
-  const totalCredits = shots.reduce((sum, s) => sum + switchCredits(s.frames, settings.resolution), 0);
+  const totalCredits = shots.filter((s) => !s.reused).reduce((sum, s) => sum + switchCredits(s.frames, settings.resolution), 0);
+  // A touch-up opened a scene's background: the switch waits until it's locked again.
+  const reopened = scenesOf(project).find((sc) => sc.look?.reopened && !sc.look.locationLocked);
 
   const select = (s: Shot) => {
     setSelectedId(s.id);
@@ -70,6 +74,8 @@ export function SwitchStage({ project }: { project: Project }) {
           <JobBar project={project} />
         ) : status === 'done' ? (
           <WrappedNote text="Every shot is approved. Tap Switch on the slate to go back and redo it." />
+        ) : shots.length === 0 && reopened ? (
+          <Button label={`Lock scene ${reopened.index + 1}'s background`} onPress={() => router.push(`/project/${project.id}/looks`)} />
         ) : shots.length === 0 ? (
           // Reference frames are built first, then the shots go up on their own.
           <Button label="Start the switch" disabled={!project.cut.locked} onPress={() => apply(project.id, (p) => startSwitch(p))} />
@@ -166,7 +172,7 @@ export function SwitchStage({ project }: { project: Project }) {
         <Chips<720 | 1080 | 2160> label="Resolution" value={settings.resolution} disabled={!editable} onChange={(resolution) => apply(project.id, (p) => setSwitchSettings(p, { resolution }))} options={RESOLUTIONS} />
         <T v="caption" c="smoke">
           {shots.length
-            ? `${modelName(settings.model)}. ${shots.length} shots, about ${totalCredits.toLocaleString()} Beeble credits at ${settings.resolution}p.`
+            ? `${modelName(settings.model)}. ${shots.length} shots${shots.some((x) => x.reused) ? `, ${shots.filter((x) => x.reused).length} kept from your last version for free` : ''}, about ${totalCredits.toLocaleString()} Beeble credits at ${settings.resolution}p.`
             : `${modelName(settings.model)}. Explore at 720p, then finish the keepers sharper.`}
         </T>
       </Panel>
@@ -197,7 +203,7 @@ function shotState(shot: Shot): string {
     case 'ready':
       return 'Back. Play it, then approve or redo.';
     case 'approved':
-      return 'Approved';
+      return shot.reused ? 'Kept from your last version, free' : 'Approved';
     case 'failed':
       return "It didn't render";
   }

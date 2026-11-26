@@ -21,6 +21,7 @@ npm run export:web  # when a change touches web-only files or app.json
 - B-roll is organized before the switch, in `broll.ts`. `arrangeBroll` lays kept cutaways on the cut (gaps covered first, the artist's ideas before the director's, spaced out, about a quarter of the video at most); `buildShots` sends only on-screen performance to SwitchX; `missingShots` switches a spot whose cutaway was dropped or failed. Call `arrangeBroll` after any change to the cut, the range or the ideas.
 - Provider limits live in `switchx.ts` and mirror Beeble SwitchX; a live project takes its limits from the server (`connectLive`). Don't change them without checking the provider.
 - The director acts only through `AgentCommand` (`agent.ts`). The server's Claude tool mirrors that list; a server test fails if they drift.
+- Every export is a version (`versions.ts`); touch-ups (`touchup.ts`) reopen one thing after an export. Nothing paid for is thrown away: `revisit` banks approved switch renders (`saveRenders`) and keeps b-roll clips made, and the switch reuses renders that still fit the same take, scene and look. Keep `lookKey` in step with anything new that changes a render.
 - Add or update a test in `src/engine/__tests__` for any engine change.
 
 ## Design rules

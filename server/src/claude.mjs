@@ -6,7 +6,7 @@ import { ProviderError } from './beeble.mjs';
 
 /** Mirrors `AgentCommand` in src/engine/agent.ts. A test keeps the two in step. */
 export const COMMAND_ENUMS = {
-  type: ['setLook', 'setFxPack', 'setFxIntensity', 'toggleEffect', 'redoShot', 'approveShots', 'reshuffle', 'addBroll', 'skipBroll', 'run', 'wrapShoot', 'lockEdit', 'setAutonomy', 'goBack', 'idea'],
+  type: ['setLook', 'setFxPack', 'setFxIntensity', 'toggleEffect', 'redoShot', 'approveShots', 'reshuffle', 'addBroll', 'skipBroll', 'run', 'wrapShoot', 'lockEdit', 'setAutonomy', 'goBack', 'idea', 'reshootScene', 'newBackground', 'makeFull', 'remakeBroll'],
   location: ['beach', 'alley', 'whiteVoid', 'darkVoid', 'hangingMic', 'custom'],
   pack: ['drill', 'trapHype', 'melodic', 'boomBap', 'dark'],
   intensity: ['Clean', 'Hype', 'Unhinged'],
@@ -34,7 +34,7 @@ const TOOL = {
               type: 'string',
               enum: COMMAND_ENUMS.type,
               description:
-                'setLook: put a section in a location (needs section, location; prompt optionally describes the world in one or two sentences, and is required for location custom, a place the presets do not have). setFxPack (pack). setFxIntensity (intensity). toggleEffect (effect, on). redoShot: re-render one switched shot (n). approveShots: approve every shot that is back. reshuffle: re-roll which take plays where. addBroll: add a cutaway (shot = what the camera sees). skipBroll. run: approve the plan and start the pipeline. wrapShoot: the artist is done recording. lockEdit: the artist is happy with the edit. setAutonomy (autonomy). goBack: reopen an earlier stage, which resets the later ones (stage). idea: file something for a later stage (stage, text).',
+                'setLook: put a section in a location (needs section, location; prompt optionally describes the world in one or two sentences, and is required for location custom, a place the presets do not have). setFxPack (pack). setFxIntensity (intensity). toggleEffect (effect, on). redoShot: re-render one switched shot (n). approveShots: approve every shot that is back. reshuffle: re-roll which take plays where. addBroll: add a cutaway (shot = what the camera sees). skipBroll. run: approve the plan and start the pipeline. wrapShoot: the artist is done recording. lockEdit: the artist is happy with the edit. setAutonomy (autonomy). goBack: reopen an earlier stage, which resets the later ones (stage); edit and broll reopen as touch-ups that keep everything made. idea: file something for a later stage (stage, text). Touch-ups, once the video has been exported or the stage is done: reshootScene: back to the camera for one scene (scene). newBackground: open one scene\'s background again so only that scene is switched again (scene; note optionally says what to change, such as "make it rain"). makeFull: turn a snippet into the full song, keeping every scene already shot. remakeBroll: make one b-roll clip again (n, in the order they play).',
             },
             section: { type: 'string', description: 'A section id, a section label such as "Verse 1", a kind such as "hook" or "verses", or "all".' },
             location: { type: 'string', enum: COMMAND_ENUMS.location },
@@ -48,6 +48,8 @@ const TOOL = {
             autonomy: { type: 'string', enum: COMMAND_ENUMS.autonomy },
             stage: { type: 'string', enum: COMMAND_ENUMS.stage },
             text: { type: 'string' },
+            scene: { type: 'integer', description: 'Scene number, starting at 1, as in "Scene 2".' },
+            note: { type: 'string', description: 'For newBackground: the change in the artist\'s words.' },
           },
         },
       },
@@ -58,12 +60,14 @@ const TOOL = {
 const SYSTEM = `You are the director inside Showtime AI, an app that turns an artist's raw performance takes into a finished music video. The artist records (or uploads) takes with their song playing. You run the rest of the pipeline and talk with them while it runs: song, plan, shoot, cut, switch, b-roll, edit, export.
 
 How the pipeline works, so your answers are accurate:
-- Plan: before recording, the artist describes the video and picks a snippet (about 30 seconds) or the full song. The video is split into scenes of about 20 seconds ("Scene 1", "Scene 2", ...), each with its own look. The artist picks where the video starts right before the first take; the plan moves with it.
+- Plan: before recording, the artist picks the part of the song (a snippet anywhere in it, or the full song trimmed at either end), says what the song is about and its message, and lists must-haves and references. The video is split into scenes of about 20 seconds ("Scene 1", "Scene 2", ...), each with its own background, made with nobody in it and locked by the artist, and a set guide.
+- Shoot: one scene at a time with its set guide, as many takes as the artist wants. The editor uses the best take of each scene.
 - Cut: takes are lined up with the song and cut on the bar grid. Each shot sent to the switch is capped by the SwitchX version in use (see switch.maxFrames in the project state).
 - Looks: every scene (or section, in older projects) gets a location. SwitchX rebuilds the world around the artist from a prompt and reference images; the performance stays exactly as shot.
 - B-roll: short generated cutaways (Gemini Omni or MiniMax H3), or the artist's own clips. Their spots are set before the switch: the app lays them on cut points, spaced out, covering any stretch no take reaches first, and keeps b-roll to about a quarter of the video. The switch skips the seconds under a cutaway, so dropping one after the switch sends that spot back through SwitchX. Ideas with no room are off until something gives way; the artist's own ideas come before yours.
 - Edit: effects land on the beat grid. Packs: drill, trapHype, melodic, boomBap, dark. Intensity: Clean (hooks only), Hype, Unhinged.
 - In "auto" mode you run every step yourself and stop only for the plan, shots that came back with a note, and the finished edit.
+- Versions and touch-ups: every export is a new version (v1, v2, ...) and older ones are kept (see versions in the project state). After an export the artist can come back any time and change one thing: the edit (goBack edit), the b-roll (goBack broll, remakeBroll), one scene's background (newBackground), one scene's takes (reshootScene), or a snippet into the full song (makeFull). Each opens only what it needs; switch renders that still fit and b-roll already made are reused for free, so only what changed is rendered again. When the artist asks for one of these, issue that command: the app adds its own line about what opened, so your reply is one short sentence.
 
 How you talk: like a music video director on set. Plain words, confident and brief: one to three sentences, one idea at a time. No hype, no emoji, no lists unless the artist asks for one. Say what you did or what happens next. Never say something is done unless the project state shows it or you are issuing the command for it in this same answer. Never invent numbers; use the ones in the project state.
 
@@ -157,6 +161,18 @@ export function cleanCommands(raw) {
         break;
       case 'idea':
         if (inSet('stage') && typeof c.text === 'string' && c.text.trim()) out.push({ type: c.type, stage: c.stage, text: c.text.trim().slice(0, 300) });
+        break;
+      case 'reshootScene':
+        if (Number.isInteger(c.scene) && c.scene > 0) out.push({ type: c.type, scene: c.scene });
+        break;
+      case 'newBackground': {
+        if (!Number.isInteger(c.scene) || c.scene < 1) break;
+        const note = typeof c.note === 'string' ? c.note.trim().slice(0, 300) : '';
+        out.push(note ? { type: c.type, scene: c.scene, note } : { type: c.type, scene: c.scene });
+        break;
+      }
+      case 'remakeBroll':
+        if (Number.isInteger(c.n) && c.n > 0) out.push({ type: c.type, n: c.n });
         break;
       default:
         out.push({ type: c.type });

@@ -4,6 +4,7 @@ import { advance, createProject, exportCost, exportVideo, type NewProjectInput }
 import { respond, runAgent } from './agent';
 import { buildSampleProjects } from './sampleProjects';
 import type { Project } from './types';
+import { recordVersion } from './versions';
 
 // App state. Projects change only through the engine's pure transitions; after each one the
 // director takes whatever steps it can on its own. Real projects are saved on the device.
@@ -67,7 +68,10 @@ function seed(): Pick<AppState, 'projects' | 'order' | 'credits' | 'plan' | 'see
   const samples = buildSampleProjects();
   const saved = load();
   // A job that was rendering on this device when the app closed can't be resumed; simulated ones can.
-  const mine = (saved?.projects ?? []).map((p) => (p.job?.external ? { ...p, job: undefined } : p));
+  const mine = (saved?.projects ?? [])
+    .map((p) => (p.job?.external ? { ...p, job: undefined } : p))
+    // Exported before versions existed: that export is v1.
+    .map((p) => (p.exportState.done && !p.versions?.length ? recordVersion(p, p.createdAt) : p));
   const all = [...mine, ...samples];
   return {
     projects: Object.fromEntries(all.map((p) => [p.id, p])),

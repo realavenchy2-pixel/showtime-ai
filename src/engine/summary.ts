@@ -1,6 +1,7 @@
 import { coverage, videoLength, videoRange } from './actions';
 import { estimateBudget } from './agent';
 import { nextActions } from './director';
+import { isSceneLocked, scenesOf } from './production';
 import { currentStage, stageStatus } from './stages';
 import type { Project } from './types';
 
@@ -66,6 +67,16 @@ export function summarize(p: Project): Record<string, unknown> {
     edit: { built: p.final.builds > 0, locked: p.final.locked },
     exported: p.exportState.done,
     ideas: p.ideas.map((i) => ({ stage: i.stage, text: i.text })),
+    scenes: scenesOf(p).map((sc) => ({
+      n: sc.index + 1,
+      from: Math.round(sc.section.start),
+      to: Math.round(sc.section.end),
+      takes: p.takes.filter((t) => t.scene === sc.index).length,
+      shot: isSceneLocked(p, sc.index),
+      background: sc.look?.locationLocked ? 'locked' : 'open',
+    })),
+    versions: (p.versions ?? []).map((v) => ({ n: v.n, part: v.part, changes: v.changes })),
+    keptRenders: p.renders?.length ?? 0,
     renderBudget: { beebleCredits: budget.totalCredits, switchFrames: budget.switchFrames, brollSeconds: budget.brollSeconds },
   };
 }

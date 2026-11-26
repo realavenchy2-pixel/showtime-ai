@@ -287,6 +287,20 @@ describe('The director (Claude)', () => {
     expect(cleanCommands([{ type: 'toggleEffect', effect: 'shake' }, { type: 'addBroll', shot: '  ' }, { type: 'goBack', stage: 'mars' }, { type: 'run', extra: 1 }])).toEqual([{ type: 'toggleEffect', effect: 'shake', on: true }, { type: 'run' }]);
   });
 
+  it('keeps well-formed touch-ups and drops the rest', () => {
+    expect(
+      cleanCommands([
+        { type: 'reshootScene', scene: 2 },
+        { type: 'reshootScene', scene: 0 },
+        { type: 'newBackground', scene: 1, note: ' make it rain ' },
+        { type: 'newBackground', scene: 'one' },
+        { type: 'makeFull' },
+        { type: 'remakeBroll', n: 'x' },
+        { type: 'remakeBroll', n: 3 },
+      ]),
+    ).toEqual([{ type: 'reshootScene', scene: 2 }, { type: 'newBackground', scene: 1, note: 'make it rain' }, { type: 'makeFull' }, { type: 'remakeBroll', n: 3 }]);
+  });
+
   it('knows the same commands, looks, packs, effects and stages as the app', () => {
     const agent = readFileSync(new URL('../../src/engine/agent.ts', import.meta.url), 'utf8');
     const union = agent.slice(agent.indexOf('export type AgentCommand ='), agent.indexOf('export interface CommandResult'));

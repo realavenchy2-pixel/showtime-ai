@@ -1,8 +1,10 @@
 import { buildShots, skippedSeconds } from './broll';
+import { nextScene, scenesOf } from './production';
 import { locationTitle } from './samples';
 import { currentStage, stageStatus } from './stages';
 import { SWITCHX } from './switchx';
 import type { AttachmentKind, Project, StageId, Take } from './types';
+import { latestVersion } from './versions';
 
 // The director's voice: what it says when a stage opens, when a job comes back, and what the
 // one big button is. With the studio server connected Claude writes the chat replies; these
@@ -31,7 +33,7 @@ export function formatTime(sec: number): string {
 /** The one big button for where the project is right now. */
 export function nextActions(p: Project): ActionSet {
   const stage = currentStage(p);
-  if (!stage) return { primary: { label: 'Watch your video', open: 'export' } };
+  if (!stage) return { primary: { label: 'Watch your video', open: 'export' }, secondary: { label: 'Touch it up', open: 'export' } };
   const status = stageStatus(p, stage.id);
   if (status === 'working') return { primary: null };
 
@@ -40,6 +42,12 @@ export function nextActions(p: Project): ActionSet {
       return { primary: { label: 'Pick your song', open: 'song' } };
     case 'shoot': {
       const n = p.takes.length;
+      // Scene by scene: the next scene to shoot is the one thing to do.
+      if (p.guides?.length) {
+        const next = nextScene(p);
+        if (next) return { primary: { label: `Shoot scene ${next.index + 1}`, open: 'shoot' } };
+        return { primary: { label: "That's a wrap, cut it", run: 'finishShooting' } };
+      }
       if (n === 0) return { primary: { label: 'Start recording', open: 'record' }, secondary: { label: 'Upload clips', open: 'shoot' } };
       if (n === 1) return { primary: { label: 'Record take 2', open: 'record' }, secondary: { label: "That's a wrap, cut it", run: 'finishShooting' } };
       return { primary: { label: "That's a wrap, cut it", run: 'finishShooting' }, secondary: { label: 'Record another take', open: 'record' } };
@@ -49,13 +57,16 @@ export function nextActions(p: Project): ActionSet {
     case 'looks':
       return { primary: { label: 'Lock the plan', run: 'approvePlan' }, secondary: { label: 'See every scene', open: 'looks' } };
     case 'switch': {
+      const open = scenesOf(p).find((sc) => sc.look?.reopened && !sc.look.locationLocked);
+      if (p.shots.length === 0 && open) return { primary: { label: `Lock scene ${open.index + 1}'s background`, open: 'looks' } };
       if (p.shots.length === 0) return { primary: { label: 'Start the switch', run: 'startSwitch' } };
       const waiting = p.shots.filter((s) => s.status === 'ready' || s.status === 'failed').length;
       return { primary: { label: waiting === 1 ? 'Review 1 shot' : `Review ${waiting} shots`, open: 'switch' } };
     }
     case 'broll': {
-      if (status === 'needs_you') return { primary: { label: 'Review b-roll', open: 'broll' } };
-      const n = p.broll.ideas.filter((i) => i.keep && i.status === 'idea' && i.at !== undefined).length;
+      const n = p.broll.ideas.filter((i) => i.keep && i.status === 'idea' && i.at !== undefined && !i.clipId).length;
+      // New ideas get made before the clips that are back get reviewed, so nothing new is dropped.
+      if (status === 'needs_you' && n === 0) return { primary: { label: 'Review b-roll', open: 'broll' } };
       return {
         primary: n ? { label: n === 1 ? 'Generate 1 clip' : `Generate ${n} clips`, run: 'generateBroll' } : { label: 'Pick b-roll', open: 'broll' },
         secondary: { label: 'Skip b-roll', run: 'skip' },
@@ -76,7 +87,9 @@ export function stageIntro(p: Project, id: StageId): { text: string; attachment?
       return { text: 'What are we shooting? Bring the track and tell me where it posts.' };
     case 'shoot':
       return {
-        text: p.length
+        text: p.guides?.length
+          ? 'Your move. Shoot one scene at a time with its set guide, as many takes as you want. Lock a scene when you have it; my editor picks the best take.'
+          : p.length
           ? 'Your move. Pick where you start in the recorder; the video starts there. One full pass is enough, and every extra take is another angle I can cut to. Already shot it? Upload your clips.'
           : 'Your move. Record with the song playing, or upload clips you already shot. One full pass is enough to start; every extra take is another angle I can cut to.',
         attachment: 'takePlan',
@@ -91,7 +104,15 @@ export function stageIntro(p: Project, id: StageId): { text: string; attachment?
         attachment: 'plan',
       };
     case 'switch': {
-      const shots = buildShots(p).length;
+      const all = buildShots(p);
+      const fresh = all.filter((x) => !x.reused).length;
+      const kept = all.length - fresh;
+      if (kept > 0) {
+        return {
+          text: `Cut's locked. ${kept} ${kept === 1 ? 'shot is' : 'shots are'} the same as your last version, so I'm keeping ${kept === 1 ? 'it' : 'them'}. ${fresh === 0 ? 'Nothing new to switch.' : `${fresh} new ${fresh === 1 ? 'shot goes' : 'shots go'} through SwitchX.`}`,
+        };
+      }
+      const shots = all.length;
       const skipped = skippedSeconds(p);
       const saved = skipped >= 1 ? ` The ${Math.round(skipped)} seconds under b-roll are skipped, so you only pay for what's on screen.` : ' Only the seconds on screen get rendered.';
       return {
@@ -140,8 +161,12 @@ export function jobResult(p: Project, stage: StageId): { text: string; attachmen
       return { text: 'B-roll is back.' };
     case 'edit':
       return { text: "Edit's ready. Watch it through, tell me what to change, or lock it." };
-    case 'export':
-      return { text: "That's a wrap. Your video is ready to download.", attachment: 'wrap' };
+    case 'export': {
+      const v = latestVersion(p);
+      if (!v || v.n === 1) return { text: "That's a wrap. v1 is ready to download. Come back any time to touch it up: the edit, the b-roll, a background, a scene, or the full song.", attachment: 'wrap' };
+      const what = v.changes.length ? ` ${v.changes.join('. ')}.` : '';
+      return { text: `v${v.n} is ready to download.${what} v${v.n - 1} is still there if you want it.`, attachment: 'wrap' };
+    }
     default:
       return null;
   }

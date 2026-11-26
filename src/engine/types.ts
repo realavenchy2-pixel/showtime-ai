@@ -150,6 +150,8 @@ export interface Look {
   options?: RefImage[];
   /** The artist locked this scene's background. */
   locationLocked?: boolean;
+  /** A touch-up opened this background again; the switch waits until it is locked. */
+  reopened?: boolean;
 }
 
 /** How SwitchX decides what to keep from the source. */
@@ -196,6 +198,49 @@ export interface Shot {
   error?: string;
   /** Switched after the b-roll: performance for a cutaway that was dropped or didn't render. */
   fill?: boolean;
+  /** Already rendered for an earlier version and still right: same take, same scene, same look. Costs nothing. */
+  reused?: boolean;
+}
+
+/**
+ * A finished switch render the project already paid for, kept when a touch-up reopens the switch.
+ * An unchanged shot is never paid for twice.
+ */
+export interface SavedRender extends Shot {
+  /** The look it was rendered with. It is reused only while the scene still has that look. */
+  lookKey: string;
+  /** The version it was first exported in. */
+  madeFor?: number;
+}
+
+/**
+ * One finished export. Every export is a new version, numbered in order and named for what it is,
+ * so the artist can go back to any of them and the files never overwrite each other.
+ */
+export interface Version {
+  id: string;
+  /** 1, 2, 3 in the order they were exported. */
+  n: number;
+  part: 'snippet' | 'full';
+  range: { start: number; end: number };
+  at: number;
+  /** What changed since the version before, in plain words. Empty for the first one. */
+  changes: string[];
+  formats: Format[];
+  resolution: Resolution;
+  files?: { format: Format; mediaId: string; extension: string }[];
+  /** What it was made from, to tell the next version what changed. */
+  recipe: VersionRecipe;
+}
+
+export interface VersionRecipe {
+  range: { start: number; end: number };
+  takeIds: string[];
+  /** Section id to the look key it was switched with. */
+  looks: Record<string, string>;
+  broll: { id: string; shot: string }[];
+  fx: string;
+  cutSeed: number;
 }
 
 export type BrollStatus = 'idea' | 'clip' | 'approved';
@@ -456,6 +501,10 @@ export interface Project {
   sceneLocks?: Record<number, boolean>;
   /** Every image this project generated. */
   library?: LibraryItem[];
+  /** Every export, oldest first. */
+  versions?: Version[];
+  /** Switch renders kept from earlier versions. */
+  renders?: SavedRender[];
   job?: Job;
   ideas: Idea[];
   messages: Message[];

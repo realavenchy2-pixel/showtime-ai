@@ -2,7 +2,8 @@ import { Platform } from 'react-native';
 
 import { exportVideo, failJob, finishJob, setExportFiles, setJobProgress } from '@/engine/actions';
 import { useApp } from '@/engine/store';
-import type { Format, Resolution } from '@/engine/types';
+import type { Format, Resolution, Version } from '@/engine/types';
+import { versionSlug } from '@/engine/versions';
 import { songUrl } from '@/media/audio';
 import { aspectOf, buildComposition } from '@/media/composition';
 import { canExport, exportComposition, type ExportAudio } from '@/media/exporter';
@@ -40,9 +41,10 @@ export function targetDimensions(format: Format, resolution: Resolution): { widt
   return aspect >= 1 ? { width: even(longest), height: even(longest / aspect) } : { width: even(longest * aspect), height: even(longest) };
 }
 
-export function exportFileName(title: string, format: Format, extension: string): string {
+/** "keef-v2-full-song-reels.mp4": the version is in every file name, so files sort in order and never overwrite. */
+export function exportFileName(title: string, format: Format, extension: string, version?: Pick<Version, 'n' | 'part'>): string {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'showtime';
-  return `${slug}-${FORMAT_FILE[format]}.${extension}`;
+  return `${version ? versionSlug(title, version) : slug}-${FORMAT_FILE[format]}.${extension}`;
 }
 
 export function cancelExport(projectId: string): void {

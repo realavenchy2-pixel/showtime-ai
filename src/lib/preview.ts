@@ -1,6 +1,7 @@
 import type { SceneKind } from '@/components/art/SceneArt';
 import { isStageDone, stageStatus } from '@/engine/stages';
 import type { Project } from '@/engine/types';
+import { latestVersion, partTitle } from '@/engine/versions';
 
 export interface Cover {
   /** A real frame from the artist's footage, when there is one. */
@@ -24,7 +25,10 @@ export function coverFor(p: Project): Cover {
 
 /** A short label for where the picture stands: raw, cut, switched, finished. */
 export function versionLabel(p: Project): string {
-  if (isStageDone(p, 'export')) return 'Final, exported';
+  if (isStageDone(p, 'export')) {
+    const v = latestVersion(p);
+    return v ? `v${v.n}, ${partTitle(v).toLowerCase()}, exported` : 'Final, exported';
+  }
   if (isStageDone(p, 'edit')) return 'Final edit';
   if (p.final.builds > 0) return 'Edit with effects';
   if (isStageDone(p, 'switch')) return 'Switched';

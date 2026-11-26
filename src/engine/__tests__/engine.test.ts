@@ -93,7 +93,8 @@ describe('song', () => {
     expect(p.messages.at(-1)?.attachment).toBe('plan');
     const locked = approvePlan(p);
     expect(currentStage(locked)?.id).toBe('shoot');
-    expect(nextActions(locked).primary).toEqual({ label: 'Start recording', open: 'record' });
+    // Shot scene by scene: the button opens the first scene with its set guide.
+    expect(nextActions(locked).primary).toEqual({ label: 'Shoot scene 1', open: 'shoot' });
     expect(locked.messages.at(-1)?.attachment).toBe('takePlan');
   });
 

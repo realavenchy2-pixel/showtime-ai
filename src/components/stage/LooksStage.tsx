@@ -15,6 +15,7 @@ import {
   videoRange,
 } from "@/engine/actions";
 import { estimateBudget } from "@/engine/agent";
+import { currentStage } from "@/engine/stages";
 import { formatTime } from "@/engine/director";
 import { FX_INTENSITIES, FX_PACKS } from "@/engine/fx";
 import { LOCATIONS, locationTitle } from "@/engine/samples";
@@ -88,15 +89,35 @@ export function LooksStage({ project }: { project: Project }) {
       footer={
         working ? (
           <JobBar project={project} />
+        ) : project.planApproved && currentStage(project)?.id === "switch" && project.shots.length === 0 ? (
+          // A touch-up opened a background: lock it and the switch redoes only that scene.
+          scenesOf(project).some((sc) => sc.look?.reopened && !sc.look.locationLocked) ? (
+            <T v="caption" c="ash" style={styles.center}>
+              Pick or type a new background and lock it. Only that scene gets switched again.
+            </T>
+          ) : (
+            <Button
+              label="Back to the switch"
+              onPress={() => router.replace(`/project/${project.id}/switch`)}
+            />
+          )
         ) : project.planApproved ? (
-          allLocationsLocked(project) || project.takes.length > 0 ? (
+          allLocationsLocked(project) ||
+          (project.takes.length > 0 &&
+            // After a touch-up added scenes, their backgrounds get locked before the camera comes out.
+            (!project.versions?.length ||
+              scenesOf(project).every(
+                (sc) =>
+                  sc.look?.locationLocked ||
+                  project.takes.some((t) => t.scene === sc.index),
+              ))) ? (
             <Button
               label="Go shoot"
               onPress={() => router.replace(`/project/${project.id}/shoot`)}
             />
           ) : (
             <T v="caption" c="ash" style={styles.center}>
-              {`Lock every background to start shooting. ${scenesOf(project).filter((sc) => !sc.look?.locationLocked).length} to go.`}
+              {`Lock every background to start shooting. ${scenesOf(project).filter((sc) => !sc.look?.locationLocked && !(project.versions?.length && project.takes.some((t) => t.scene === sc.index))).length} to go.`}
             </T>
           )
         ) : (

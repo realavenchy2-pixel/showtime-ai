@@ -1,4 +1,4 @@
-import { arrangeBroll, buildShots, cutawaySec, missingShots } from './broll';
+import { arrangeBroll, buildShots, cutawaySec, missingShots, saveRenders } from './broll';
 import { formatTime, jobResult, stageIntro, takeLine } from './director';
 import { emptyEffects, planForPack, planFromCopied } from './fx';
 import {
@@ -11,6 +11,7 @@ import {
 } from './samples';
 import { bestTake, pitchIdeas, prepareShoot, scenesOf, setPath } from './production';
 import { canSkip, currentStage, STAGE_BY_ID, STAGES } from './stages';
+import { recordVersion } from './versions';
 import { HANDLE_SEC, maxShotSec, RECORD_FPS, SWITCHX } from './switchx';
 import type {
   Autonomy,
@@ -764,9 +765,18 @@ export function startSwitch(p: Project, opts: { external?: boolean } = {}): Proj
   if (p.plates === 'none' && !p.job && p.shots.length === 0 && p.cut.locked) return makePlates(p);
   if (p.plates === 'ready') p = { ...p, plates: 'approved' };
   if (p.plates !== 'approved' || p.job || p.shots.length > 0) return p;
+  // Locked backgrounds only: a touch-up that opened one waits for the artist to lock it again.
+  if (scenesOf(p).some((s) => s.look?.reopened && !s.look.locationLocked)) return p;
   const shots = buildShots(p);
   if (shots.length === 0) return p;
-  return startJob({ ...p, shots }, 'switch', `Switching ${shots.length} shots, ${SWITCHX.concurrency} at a time`, 0, opts.external ?? liveStage(p, 'switch'));
+  const fresh = shots.filter((s) => !s.reused).length;
+  const kept = shots.length - fresh;
+  if (fresh === 0) {
+    const done = post({ ...p, shots }, 'director', `Nothing new to switch: all ${kept} ${kept === 1 ? 'shot is' : 'shots are'} the same as your last version, so they cost nothing.`, { stage: 'switch' });
+    return withIntro(p, done);
+  }
+  const label = kept ? `Switching ${fresh} new ${fresh === 1 ? 'shot' : 'shots'}, ${kept} kept from your last version` : `Switching ${shots.length} shots, ${SWITCHX.concurrency} at a time`;
+  return startJob({ ...p, shots }, 'switch', label, 0, opts.external ?? liveStage(p, 'switch'));
 }
 
 /** After a reload: picks a live switch back up where its shots left off. */
@@ -902,6 +912,10 @@ export function approveBroll(p: Project): Project {
 function fillIn(before: Project, p: Project): Project {
   const extra = missingShots(p);
   if (extra.length === 0 || p.job) return withIntro(before, p);
+  if (extra.every((s) => s.reused)) {
+    // Every spot that went back to the performance was already switched for an earlier version.
+    return withIntro(before, { ...p, shots: [...p.shots, ...extra] });
+  }
   const seconds = Math.round(extra.reduce((sum, s) => sum + (s.end - s.start), 0));
   let next: Project = { ...p, shots: [...p.shots, ...extra] };
   next = post(
@@ -1012,9 +1026,11 @@ function resetStage(p: Project, id: StageId): Project {
     case 'looks':
       return { ...p, plates: 'none', planApproved: false };
     case 'switch':
-      return { ...p, shots: [] };
+      // Finished renders are kept: a touch-up only re-switches what changed.
+      return { ...p, renders: saveRenders(p), shots: [] };
     case 'broll':
-      return { ...p, broll: { approved: false, ideas: p.broll.ideas.map((i) => ({ ...i, status: 'idea' as const, remoteId: undefined, url: undefined, mediaId: undefined })) } };
+      // Clips already made stay made (and paid for); the artist keeps, drops or remakes them.
+      return { ...p, broll: { approved: false, ideas: p.broll.ideas.map((i) => (i.status === 'approved' ? { ...i, status: 'clip' as const } : i)) } };
     case 'edit':
       return { ...p, final: { builds: 0, locked: false } };
     case 'export':
@@ -1022,8 +1038,12 @@ function resetStage(p: Project, id: StageId): Project {
   }
 }
 
-/** Goes back to a finished stage. That stage and everything after it redo. */
-export function revisit(p: Project, id: StageId): Project {
+/**
+ * Goes back to a finished stage. That stage and everything after it redo, but nothing paid for is
+ * thrown away: switch renders and b-roll clips are kept and reused where they still fit.
+ * `quiet` skips the director's stage intro, for touch-ups that say what happens themselves.
+ */
+export function revisit(p: Project, id: StageId, opts: { quiet?: boolean } = {}): Project {
   const from = STAGE_BY_ID[id].n;
   let next: Project = { ...p, skipped: p.skipped.filter((s) => STAGE_BY_ID[s].n < from) };
   if (next.job && STAGE_BY_ID[next.job.stage].n >= from) next = { ...next, job: undefined };
@@ -1031,6 +1051,7 @@ export function revisit(p: Project, id: StageId): Project {
     if (stage.n >= from) next = resetStage(next, stage.id);
   }
   next = post(next, 'system', `Went back to ${STAGE_BY_ID[id].title}.`);
+  if (opts.quiet) return next;
   // Going back to the cut means the takes are already in: cut again right away.
   if (id === 'cut' && next.takes.length) return startJob(next, 'cut', 'Sorting takes and cutting on the beat', 2400);
   if (id === 'looks') next = pitchPlan(next);
@@ -1071,7 +1092,7 @@ function completeJob(p: Project, job: Job): Project {
       next = { ...next, final: { ...next.final, builds: next.final.builds + 1 } };
       break;
     case 'export':
-      next = { ...next, exportState: { ...next.exportState, done: true } };
+      next = recordVersion({ ...next, exportState: { ...next.exportState, done: true } });
       break;
   }
   const result = jobResult(next, job.stage);

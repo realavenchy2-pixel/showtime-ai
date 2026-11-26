@@ -4,6 +4,7 @@ import { toggleBrollKeep, videoRange } from '@/engine/actions';
 import { cutawayWindows } from '@/engine/broll';
 import { formatTime } from '@/engine/director';
 import { useApp } from '@/engine/store';
+import { remakeBroll } from '@/engine/touchup';
 import type { BrollIdea, Project } from '@/engine/types';
 import { color, radius, space } from '@/theme/tokens';
 
@@ -61,6 +62,13 @@ export function CutawayRow({ project, idea, disabled, onPlay }: { project: Proje
         <T v="caption" c={idea.status === 'clip' && idea.keep ? 'accent' : 'ash'}>
           {note(project, idea)}
         </T>
+        {idea.status === 'clip' && !idea.clipId && !disabled && !project.broll.approved ? (
+          <Press onPress={() => apply(project.id, (p) => remakeBroll(p, idea.id))} hitSlop={8} style={styles.again} accessibilityLabel={`Make this b-roll again: ${idea.shot}`}>
+            <T v="caption" c="chalk">
+              Make it again
+            </T>
+          </Press>
+        ) : null}
       </View>
       <Toggle
         value={idea.keep}
@@ -89,5 +97,12 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
     gap: 2,
+  },
+  again: {
+    alignSelf: 'flex-start',
+    marginTop: space.xs,
+    paddingVertical: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: color.hairlineStrong,
   },
 });

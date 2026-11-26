@@ -1,16 +1,15 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Check, Download, Monitor, Smartphone } from '@/components/icons';
-import { exportCost, formatName, setExportFormats, setResolution } from '@/engine/actions';
+import { Check, Monitor, Smartphone } from '@/components/icons';
+import { exportCost, setExportFormats, setResolution } from '@/engine/actions';
 import { stageStatus } from '@/engine/stages';
 import { useApp } from '@/engine/store';
 import type { Format, Project, Resolution } from '@/engine/types';
-import { cancelExport, exportDimensions, exportFileName, runExport, targetDimensions } from '@/lib/exportRun';
+import { latestVersion } from '@/engine/versions';
+import { cancelExport, runExport, targetDimensions } from '@/lib/exportRun';
 import { haptic } from '@/lib/haptics';
 import { canExport, prepareExportAudio } from '@/media/exporter';
-import { mediaBlob, saveToDevice } from '@/media/library';
 import { color, radius, space } from '@/theme/tokens';
 
 import { Button } from '../Button';
@@ -19,8 +18,8 @@ import { PlayerView } from '../player/PlayerView';
 import { Press } from '../Press';
 import { SectionTitle } from '../Screen';
 import { T } from '../T';
-import { showToast } from '../Toast';
 import { JobBar, StageScreen, WrappedNote, stageStyles } from './StageChrome';
+import { latestTitle, TouchUpCard, VersionFiles, VersionsList } from './TouchUp';
 
 const FORMATS: { id: Format; title: string; detail: string }[] = [
   { id: '16:9', title: 'YouTube', detail: 'Wide, 16:9' },
@@ -34,7 +33,6 @@ export function ExportStage({ project }: { project: Project }) {
   const apply = useApp((s) => s.apply);
   const credits = useApp((s) => s.credits);
   const plan = useApp((s) => s.plan);
-  const [saving, setSaving] = useState<Format | null>(null);
   const status = stageStatus(project, 'export');
   const state = project.exportState;
   const working = project.job?.stage === 'export';
@@ -57,18 +55,7 @@ export function ExportStage({ project }: { project: Project }) {
     if (outcome === 'done') haptic.success();
   };
 
-  const save = async (file: NonNullable<typeof state.files>[number]) => {
-    setSaving(file.format);
-    try {
-      const blob = await mediaBlob(file.mediaId);
-      if (!blob) throw new Error('missing');
-      const how = await saveToDevice(blob, exportFileName(project.title, file.format, file.extension));
-      if (how === 'downloaded') showToast('Saved to your downloads');
-    } catch {
-      showToast('That file is no longer on this device. Export again to get it back.');
-    }
-    setSaving(null);
-  };
+  const latest = latestVersion(project);
 
   return (
     <StageScreen
@@ -81,7 +68,7 @@ export function ExportStage({ project }: { project: Project }) {
             {project.job?.external ? <Button label="Cancel" variant="quiet" onPress={() => cancelExport(project.id)} /> : null}
           </>
         ) : state.done ? (
-          <WrappedNote text="Exported. Tap Export on the slate to render it again with different settings." />
+          <WrappedNote text={`${latest ? `v${latest.n} is exported.` : 'Exported.'} Touch it up below, or tap Export on the slate to render it again in other sizes.`} />
         ) : status === 'locked' ? null : (
           <>
             <Button label={`Export, ${cost} ${cost === 1 ? 'credit' : 'credits'}`} disabled={state.formats.length === 0} onPress={() => void start()} />
@@ -91,33 +78,19 @@ export function ExportStage({ project }: { project: Project }) {
           </>
         )
       }>
-      <PlayerView project={project} effects label={state.done ? 'Final, exported' : 'Final edit'} />
+      <PlayerView project={project} effects label={state.done && latest ? `v${latest.n}, exported` : latest ? `v${latest.n + 1}, not exported yet` : 'Final edit'} />
 
       {state.done ? (
-        <View style={stageStyles.block}>
-          <SectionTitle detail={state.files?.length ? 'Tap one to save it or send it straight to an app.' : undefined}>Your video</SectionTitle>
-          {state.files?.length ? (
-            state.files.map((file) => {
-              const dims = exportDimensions(file.format, state.resolution);
-              return (
-                <Press key={file.format} onPress={() => void save(file)} disabled={saving !== null} scaleTo={0.99} style={styles.file} accessibilityLabel={`Save the ${formatName(file.format)} video`}>
-                  <Download size={20} color={color.chalk} />
-                  <View style={stageStyles.flex}>
-                    <T v="callout">{FORMATS.find((f) => f.id === file.format)?.title ?? file.format}</T>
-                    <T v="caption" c="smoke">{`${dims.width} x ${dims.height}, ${file.extension.toUpperCase()}`}</T>
-                  </View>
-                  <T v="callout" c="smoke">
-                    {saving === file.format ? 'Saving' : 'Save'}
-                  </T>
-                </Press>
-              );
-            })
-          ) : (
-            <T v="body" c="smoke">
-              {project.isSample ? 'This sample was exported ahead of time, so there is no file to save. Start your own video to get one.' : 'The finished files download from the web app.'}
-            </T>
-          )}
-        </View>
+        <>
+          {latest ? (
+            <View style={stageStyles.block}>
+              <SectionTitle detail={latest.changes.length ? latest.changes.join('. ') : 'Tap one to save it or send it straight to an app.'}>{latestTitle(latest)}</SectionTitle>
+              <VersionFiles project={project} version={latest} />
+            </View>
+          ) : null}
+          {project.isSample ? null : <TouchUpCard project={project} />}
+          <VersionsList project={project} skipLatest={!!latest} />
+        </>
       ) : (
         <>
           <View style={stageStyles.block}>
@@ -163,6 +136,7 @@ export function ExportStage({ project }: { project: Project }) {
               ]}
             />
           </View>
+          <VersionsList project={project} />
         </>
       )}
     </StageScreen>
@@ -200,16 +174,5 @@ const styles = StyleSheet.create({
   checkOn: {
     backgroundColor: color.chalk,
     borderColor: color.chalk,
-  },
-  file: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.m,
-    minHeight: 64,
-    paddingHorizontal: space.l,
-    borderRadius: radius.m,
-    backgroundColor: color.flat,
-    borderWidth: 1,
-    borderColor: color.hairlineStrong,
   },
 });

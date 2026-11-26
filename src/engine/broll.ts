@@ -1,6 +1,6 @@
 import { barSec, brollShots } from './samples';
 import { framesFor, HANDLE_SEC } from './switchx';
-import type { BrollIdea, Project, Shot } from './types';
+import type { BrollIdea, Project, SavedRender, Shot } from './types';
 
 // Organizing b-roll around the switch.
 //
@@ -333,18 +333,72 @@ function shotsFrom(p: Project, pieces: PerformancePiece[], maxFrames: number, fi
  * cutaway are skipped, which is where most of the savings come from.
  */
 export function buildShots(p: Project, maxFrames: number = p.switchSettings.maxFrames): Shot[] {
-  return shotsFrom(p, performancePieces(p, cutawayWindows(p, 'planned')), maxFrames, 1, false);
+  const pieces = performancePieces(p, cutawayWindows(p, 'planned'));
+  const reused = reusedShots(p, pieces, []);
+  const fresh = shotsFrom(p, notCovered(pieces, reused), maxFrames, 1, false);
+  return numbered([...reused, ...fresh]);
 }
 
 /**
  * Performance the edit needs that no shot covers: a planned cutaway was dropped, didn't render,
  * or b-roll was skipped. These go through the switch after the b-roll so the video has no holes.
+ * A render kept from an earlier version fills the spot for free when it still fits.
  */
 export function missingShots(p: Project): Shot[] {
-  const need: PerformancePiece[] = [];
-  for (const piece of performancePieces(p, cutawayWindows(p, 'shown'))) {
+  const need = notCovered(performancePieces(p, cutawayWindows(p, 'shown')), p.shots);
+  const reused = reusedShots(p, need, p.shots);
+  const fresh = shotsFrom(p, notCovered(need, reused), p.switchSettings.maxFrames, 1, true);
+  const n = p.shots.length;
+  return [...reused, ...fresh].sort((a, b) => a.start - b.start).map((s, i) => ({ ...s, n: n + i + 1 }));
+}
+
+// ---------- Renders kept across touch-ups ----------
+
+/**
+ * What a switch render depends on besides the footage: the scene's look (place, prompt, references)
+ * and the switch settings. Two renders with the same take, time and key come out the same.
+ */
+export function lookKey(p: Project, sectionId: string): string {
+  const look = p.looks[sectionId];
+  if (!look) return '';
+  const s = p.switchSettings;
+  return JSON.stringify([look.location, look.prompt.trim(), look.refs.map((r) => r.id), s.model, s.alphaMode, s.resolution]);
+}
+
+/** Finished shots worth keeping when the switch reopens: approved, with their look. */
+export function saveRenders(p: Project): SavedRender[] {
+  const kept = [...(p.renders ?? [])];
+  const madeFor = p.versions?.length ? p.versions[p.versions.length - 1].n : undefined;
+  const same = (a: Shot, b: Shot, key: string, bKey: string) => a.takeId === b.takeId && Math.abs(a.start - b.start) < 0.01 && Math.abs(a.end - b.end) < 0.01 && key === bKey;
+  for (const shot of p.shots) {
+    if (shot.status !== 'approved') continue;
+    const key = lookKey(p, shot.sectionId);
+    if (!key || kept.some((r) => same(r, shot, r.lookKey, key))) continue;
+    const { reused: _reused, fill: _fill, pendingFlag: _pending, ...rest } = shot;
+    kept.push({ ...rest, status: 'approved', progress: 1, flag: undefined, lookKey: key, madeFor });
+  }
+  return kept.slice(-400);
+}
+
+/** Kept renders that cover part of what's needed now, for the same take, scene and look. */
+function reusedShots(p: Project, need: PerformancePiece[], have: Shot[]): Shot[] {
+  const out: Shot[] = [];
+  for (const r of p.renders ?? []) {
+    if (r.lookKey !== lookKey(p, r.sectionId)) continue;
+    if (!need.some((x) => x.takeId === r.takeId && x.sectionId === r.sectionId && x.start < r.end - 0.05 && x.end > r.start + 0.05)) continue;
+    if ([...have, ...out].some((s) => s.takeId === r.takeId && Math.abs(s.start - r.start) < 0.01 && Math.abs(s.end - r.end) < 0.01)) continue;
+    const { lookKey: _key, madeFor: _made, ...shot } = r;
+    out.push({ ...shot, id: uid('shot'), status: 'approved', progress: 1, reused: true, flag: undefined, pendingFlag: undefined, fill: undefined, workMs: 0 });
+  }
+  return out;
+}
+
+/** What's left of `pieces` once `shots` cover what they can, per take. */
+function notCovered(pieces: PerformancePiece[], shots: Shot[]): PerformancePiece[] {
+  const out: PerformancePiece[] = [];
+  for (const piece of pieces) {
     let parts: [number, number][] = [[piece.start, piece.end]];
-    for (const shot of p.shots) {
+    for (const shot of shots) {
       if (shot.takeId !== piece.takeId) continue;
       parts = parts.flatMap(([a, b]): [number, number][] => {
         if (shot.end <= a + 1e-6 || shot.start >= b - 1e-6) return [[a, b]];
@@ -354,9 +408,14 @@ export function missingShots(p: Project): Shot[] {
         return keep;
       });
     }
-    for (const [a, b] of parts) need.push({ ...piece, start: round(a), end: round(b) });
+    for (const [a, b] of parts) out.push({ ...piece, start: round(a), end: round(b) });
   }
-  return shotsFrom(p, need, p.switchSettings.maxFrames, p.shots.length + 1, true);
+  return out;
+}
+
+/** Shots in the order they play, numbered from 1. */
+function numbered(shots: Shot[]): Shot[] {
+  return shots.slice().sort((a, b) => a.start - b.start).map((s, i) => ({ ...s, n: i + 1 }));
 }
 
 /** Seconds of performance that never go to the switch because a cutaway covers them. */

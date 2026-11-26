@@ -50,7 +50,7 @@ export function BrollStage({ project }: { project: Project }) {
           <JobBar project={project} />
         ) : wrapped ? (
           <WrappedNote text={status === 'skipped' ? 'B-roll was skipped. Tap B-roll on the slate to bring it back.' : 'B-roll is in the edit. Tap B-roll on the slate to go back.'} />
-        ) : back && current ? (
+        ) : back && current && toMake === 0 ? (
           <Button label="Keep these clips" onPress={() => apply(project.id, approveBroll)} />
         ) : current ? (
           <>
@@ -59,7 +59,7 @@ export function BrollStage({ project }: { project: Project }) {
               disabled={toMake === 0 && !own}
               onPress={() => apply(project.id, (p) => generateBroll(p))}
             />
-            <Button label="Skip b-roll" variant="quiet" onPress={() => apply(project.id, (p) => skipStage(p, 'broll'))} />
+            {back ? null : <Button label="Skip b-roll" variant="quiet" onPress={() => apply(project.id, (p) => skipStage(p, 'broll'))} />}
           </>
         ) : (
           <WrappedNote text="These generate after the switch. Their spots are set now, so the switch skips those seconds." />

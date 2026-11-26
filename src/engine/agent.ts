@@ -31,9 +31,11 @@ import { buildShots } from './broll';
 import { nextActions, STAGE_WORD } from './director';
 import { FX_EFFECTS, FX_PACKS } from './fx';
 import { routeIdea } from './ideas';
+import { scenesOf } from './production';
 import { locationTitle, LOCATIONS } from './samples';
 import { currentStage, stageDef, stageStatus } from './stages';
 import { BROLL_CREDITS_PER_SEC, REFERENCE_CREDITS, switchCredits } from './switchx';
+import { makeFullSong, newBackground, remakeBroll, reshootScene, touchUpBroll, touchUpEdit } from './touchup';
 import type { Autonomy, FxEffectId, FxIntensity, FxPackId, LocationKind, Project, SectionKind, StageId } from './types';
 
 // The agent: what the director does on its own, and what it does when the artist talks to it.
@@ -108,7 +110,11 @@ export type AgentCommand =
   | { type: 'lockEdit' }
   | { type: 'setAutonomy'; autonomy: Autonomy }
   | { type: 'goBack'; stage: StageId }
-  | { type: 'idea'; stage: StageId; text: string };
+  | { type: 'idea'; stage: StageId; text: string }
+  | { type: 'reshootScene'; scene: number }
+  | { type: 'newBackground'; scene: number; note?: string }
+  | { type: 'makeFull' }
+  | { type: 'remakeBroll'; n: number };
 
 export interface CommandResult {
   project: Project;
@@ -142,6 +148,14 @@ function sectionWord(p: Project, section: string): string {
 export function applyCommand(p: Project, cmd: AgentCommand): CommandResult {
   const result = (project: Project, done: string, blocked: string): CommandResult =>
     project === p ? { project: p, ok: false, note: blocked } : { project, ok: true, note: done };
+  // Touch-ups post their own line; it becomes the note, so the chat gets it once.
+  const touched = (project: Project, blocked: string): CommandResult => {
+    if (project === p) return { project: p, ok: false, note: blocked };
+    const last = project.messages[project.messages.length - 1];
+    if (last?.from !== 'director') return { project, ok: true, note: '' };
+    return { project: { ...project, messages: project.messages.slice(0, -1) }, ok: true, note: last.text };
+  };
+  const sceneCount = scenesOf(p).length;
 
   switch (cmd.type) {
     case 'setLook': {
@@ -196,7 +210,27 @@ export function applyCommand(p: Project, cmd: AgentCommand): CommandResult {
     case 'goBack': {
       const status = stageStatus(p, cmd.stage);
       if (status !== 'done' && status !== 'skipped') return { project: p, ok: false, note: `We haven't finished ${STAGE_WORD[cmd.stage]} yet.` };
+      // The edit and the b-roll reopen as touch-ups: nothing finished gets thrown away.
+      if (cmd.stage === 'edit') return touched(touchUpEdit(p), `Back to ${STAGE_WORD.edit}.`);
+      if (cmd.stage === 'broll') return touched(touchUpBroll(p), `Back to ${STAGE_WORD.broll}.`);
       return { project: revisit(p, cmd.stage), ok: true, note: `Back to ${STAGE_WORD[cmd.stage]}.` };
+    }
+    case 'reshootScene':
+      if (cmd.scene < 1 || (sceneCount && cmd.scene > sceneCount)) return { project: p, ok: false, note: `There is no scene ${cmd.scene}. This video has ${sceneCount}.` };
+      return touched(reshootScene(p, cmd.scene - 1), p.job ? 'Something is rendering. Ask me again when it is back.' : 'Finish the shoot once, then any scene can be shot again.');
+    case 'newBackground':
+      if (cmd.scene < 1 || (sceneCount && cmd.scene > sceneCount)) return { project: p, ok: false, note: `There is no scene ${cmd.scene}. This video has ${sceneCount}.` };
+      return touched(newBackground(p, cmd.scene - 1, cmd.note), p.job ? 'Something is rendering. Ask me again when it is back.' : "That scene hasn't been switched yet, so change its background in the plan.");
+    case 'makeFull':
+      return touched(makeFullSong(p), p.planApproved ? 'It already covers the whole song.' : 'Lock the plan first; you can pick the full song there.');
+    case 'remakeBroll': {
+      const placed = p.broll.ideas.filter((i) => i.keep && i.at !== undefined).sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+      const idea = placed[cmd.n - 1];
+      if (!idea) return { project: p, ok: false, note: placed.length ? `There is no b-roll ${cmd.n}. This video has ${placed.length}.` : 'There is no b-roll in this video.' };
+      const open = p.broll.approved ? touched(touchUpBroll(p), '') : { project: p, ok: true, note: '' };
+      const next = remakeBroll(open.project, idea.id);
+      if (next === open.project) return { project: p, ok: false, note: idea.clipId ? "That one is your own clip, so there's nothing to remake." : "That clip hasn't been made yet." };
+      return { project: next, ok: true, note: [open.note, `Making b-roll ${cmd.n} again.`].filter(Boolean).join(' ') };
     }
     case 'idea': {
       const status = stageStatus(p, cmd.stage);
@@ -255,6 +289,15 @@ export function parseCommands(input: string, p: Project): AgentCommand[] {
   const out: AgentCommand[] = [];
 
   if (/\b(shuffle|re-?roll|different cut|another cut|recut)\b/.test(text)) out.push({ type: 'reshuffle' });
+
+  // Touch-ups: "reshoot scene 2", "new background for scene 3", "make it the full song", "remake b-roll 2".
+  const reshoot = text.match(/\b(re-?shoot|shoot again|redo|re-?do|re-?record|record again)\b[^.]*?\bscene (\d+)\b|\bscene (\d+)\b[^.]*?\b(re-?shoot|again|over)\b/);
+  const background = text.match(/\b(new|different|another|change|swap)\b[^.]*?\b(background|location|place|set|world)\b[^.]*?\bscene (\d+)\b|\bscene (\d+)\b[^.]*?\b(new|different|another|change|swap)\b[^.]*?\b(background|location|place|set|world)\b/);
+  if (background) out.push({ type: 'newBackground', scene: Number(background[3] ?? background[4]) });
+  else if (reshoot) out.push({ type: 'reshootScene', scene: Number(reshoot[2] ?? reshoot[3]) });
+  if (/\b(full|whole|entire|rest of the) (song|track)\b/.test(text) && /\b(make|turn|do|go|extend|want|shoot|let'?s|finish)\b/.test(text) && !LOCATION_WORDS.some(([re]) => re.test(text))) out.push({ type: 'makeFull' });
+  const remake = text.match(/\b(remake|redo|re-?do|swap|another|new)\b[^.]*?\bb-?roll (\d+)\b|\bb-?roll (\d+)\b[^.]*?\b(again|remake|swap|over)\b/);
+  if (remake) out.push({ type: 'remakeBroll', n: Number(remake[2] ?? remake[3]) });
 
   const redo = text.match(/\b(redo|rerun|re-?do|again)\b.*?\bshot (\d+)\b|\bshot (\d+)\b.*?\b(redo|again|over)\b/);
   if (redo) out.push({ type: 'redoShot', n: Number(redo[2] ?? redo[3]) });
@@ -340,20 +383,26 @@ export function replyLocally(p: Project, text: string): Project {
     next = res.project;
     notes.push(res.note);
   }
-  return addDirectorMessage(next, notes.join(' '));
+  const said = notes.filter(Boolean).join(' ');
+  return said ? addDirectorMessage(next, said) : next;
 }
 
 /** Applies commands that came back from Claude, then posts its reply with any notes about what could not change. */
 export function applyReply(p: Project, reply: string, commands: AgentCommand[]): Project {
   let next = p;
   const blocked: string[] = [];
+  const opened: string[] = [];
   for (const cmd of commands) {
     const res = applyCommand(next, cmd);
     next = res.project;
     if (!res.ok) blocked.push(res.note);
+    // A touch-up says exactly what it opened and what stays; Claude's reply stays short.
+    else if (TOUCH_UPS.has(cmd.type) && res.note) opened.push(res.note);
   }
-  return addDirectorMessage(next, [reply.trim(), ...blocked].filter(Boolean).join(' '));
+  return addDirectorMessage(next, [reply.trim(), ...opened, ...blocked].filter(Boolean).join(' '));
 }
+
+const TOUCH_UPS = new Set<AgentCommand['type']>(['reshootScene', 'newBackground', 'makeFull']);
 
 // ---------- Budget ----------
 
@@ -367,26 +416,22 @@ export interface Budget {
   totalCredits: number;
 }
 
-/** What the plan costs to render in Beeble credits, at the project's switch resolution. */
+/**
+ * What the plan costs to render in Beeble credits, at the project's switch resolution. Renders kept
+ * from an earlier version and b-roll clips already made cost nothing again, so they don't count.
+ */
 export function estimateBudget(p: Project): Budget {
-  const shots = p.shots.length ? p.shots : [];
+  const shots = (p.shots.length ? p.shots : buildShots(p)).filter((s) => !s.reused);
   let switchFrames = 0;
   let credits = 0;
-  if (shots.length) {
-    for (const s of shots) {
-      switchFrames += s.frames;
-      credits += switchCredits(s.frames, p.switchSettings.resolution);
-    }
-  } else {
-    // Before the switch: the shots it would send, which skip the seconds under planned cutaways.
-    for (const s of buildShots(p)) {
-      switchFrames += s.frames;
-      credits += switchCredits(s.frames, p.switchSettings.resolution);
-    }
+  // Before the switch these are the shots it would send, which skip the seconds under planned cutaways.
+  for (const s of shots) {
+    switchFrames += s.frames;
+    credits += switchCredits(s.frames, p.switchSettings.resolution);
   }
   const looks = new Set(Object.values(p.looks).map((l) => `${l.location}:${l.prompt}`));
   const referenceCredits = looks.size * REFERENCE_CREDITS;
-  const kept = p.broll.ideas.filter((i) => i.keep && i.at !== undefined && !i.clipId);
+  const kept = p.broll.ideas.filter((i) => i.keep && i.at !== undefined && !i.clipId && (i.status === 'idea' || !p.versions?.length));
   const brollSeconds = kept.reduce((sum, i) => sum + Math.ceil(i.durationSec), 0);
   const brollCredits = kept.reduce((sum, i) => sum + Math.ceil(i.durationSec) * BROLL_CREDITS_PER_SEC[i.model], 0);
   return { switchFrames, switchCredits: credits, referenceCredits, brollSeconds, brollCredits, totalCredits: credits + referenceCredits + brollCredits };
