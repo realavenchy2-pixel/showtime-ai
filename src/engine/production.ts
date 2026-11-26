@@ -364,6 +364,11 @@ export function applyMustHaves(p: Project): Project {
   return { ...p, looks };
 }
 
+/** "2.0 m (6.6 ft)": the guide speaks both, most artists think in feet. */
+function len(m: number): string {
+  return `${m.toFixed(1)} m (${(m * 3.281).toFixed(1)} ft)`;
+}
+
 // ---------- The part of the song ----------
 
 /** The loudest stretch of the song of about `seconds`, from the waveform: usually the hook. */
@@ -840,11 +845,12 @@ export function guideFor(scene: Scene): SetGuide {
       : "right";
   const props = propsFor(`${scene.look?.prompt ?? ""}`);
   const steps = [
-    `Find a clear space: a plain wall, nothing busy behind you, and ${(rig.backroomM + 1).toFixed(1)} m to move. If someone else is filming, they stand where the phone is.`,
+    `Find a clear space: a plain wall, nothing busy behind you, and ${len(rig.backroomM + 1)} to move.`,
     ...props.map((pr) => `For ${pr.for}: ${pr.say}`),
-    `Stand on your mark with at least ${rig.backroomM.toFixed(1)} m of clear space behind you. Plain walls switch cleanest.`,
-    `Phone on a tripod or propped on books, ${rig.distance.toFixed(1)} m away${side ? `, a step to the ${side > 0 ? "right" : "left"}` : ", straight on"}, at ${height < 1 ? "knee" : height < 1.5 ? "chest" : "eye"} height (${height.toFixed(1)} m).`,
-    `${framing === "wide" ? "Head to toe in frame" : framing === "medium" ? "Waist up in frame" : "Chest up in frame"}, ${rig.lensMm === 24 ? "1x lens" : rig.lensMm === 35 ? "1.5x zoom" : "2x zoom"}.`,
+    `Stand on your mark with at least ${len(rig.backroomM)} of clear space behind you. Plain walls switch cleanest.`,
+    `Propped up: phone on a tripod or books, ${len(rig.distance)} away${side ? `, a step to the ${side > 0 ? "right" : "left"}` : ", straight on"}, at ${height < 1 ? "knee" : height < 1.5 ? "chest" : "eye"} height (${len(height)}). Stay on your mark; the editor adds the zoom-ins and the handheld feel.`,
+    `Someone filming: same spot and height, phone held in both hands. They can drift and push in a little with you for the real handheld feel, but keep you in frame and don't walk past your mark.`,
+    `${framing === "wide" ? "Head to toe in frame" : framing === "medium" ? "Waist up in frame" : "Chest up in frame"}, ${rig.lensMm === 24 ? "1x lens" : rig.lensMm === 35 ? "1.5x zoom" : "2x zoom"}. Leave a little room around you, so the editor can punch in on the beat.`,
     light === "behind camera"
       ? "Main light behind the phone, pointing at you."
       : `Main light on your ${light}, so the background stays clean.`,

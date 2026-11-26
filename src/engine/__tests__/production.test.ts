@@ -150,6 +150,14 @@ describe("locking the plan", () => {
       }
     }
   });
+
+  it("guides cover a propped phone and someone filming, in meters and feet", () => {
+    const g = locked().guides![0];
+    const all = g.steps.join(" ");
+    expect(all).toMatch(/Propped up/);
+    expect(all).toMatch(/Someone filming/);
+    expect(all).toMatch(/\d\.\d m \(\d+\.\d ft\)/);
+  });
 });
 
 describe("shooting scene by scene", () => {
