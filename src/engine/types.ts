@@ -543,6 +543,12 @@ export interface Project {
   cameraLook?: CameraLookId;
   /** One set guide per scene, in scene order. Made when the plan locks. */
   guides?: SetGuide[];
+  /**
+   * Where the video happens: 'new' switches every scene into a world the director builds (the default);
+   * 'real' keeps the artist where they actually shoot. No backgrounds to pick, no switch: the shoot goes
+   * straight to the cut, b-roll and the edit.
+   */
+  backgrounds?: 'new' | 'real';
   /** Shots picked on purpose, by section id: the director's calls in the plan and the artist's changes. */
   shotCalls?: Record<string, ShotCall>;
   /** Scenes the artist is happy with, by scene number. */

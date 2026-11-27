@@ -131,11 +131,13 @@ export function planFromBrief(p: Project, input: string): Project {
             Math.floor((i * settings.length) / scenes.length),
           )
         ];
-      next = setLook(next, s.id, setting.location);
+      // Shooting where you are, a place named is the real spot, not a world to build.
+      const location = p.backgrounds === "real" ? "custom" : setting.location;
+      next = setLook(next, s.id, location);
       const base =
-        setting.location === "custom"
+        location === "custom"
           ? `${capitalize(setting.words)}. The camera stays with the performer.`
-          : `${locationPreset(setting.location).prompt} The artist wants: ${setting.words}.`;
+          : `${locationPreset(location).prompt} The artist wants: ${setting.words}.`;
       next = setLookPrompt(next, s.id, `${base}${moodLine}`);
     });
   }
@@ -227,6 +229,13 @@ export function lockPlan(
   let next = setVideoLength(p, input.length);
   if (brief) next = addUserMessage(next, brief);
   if (places) next = planFromBrief(next, places);
+  else if (next.backgrounds === "real" && next.song) {
+    // No places said and no switch: every scene is wherever the artist shoots it.
+    for (const s of next.song.sections) {
+      next = setLook(next, s.id, "custom");
+      next = setLookPrompt(next, s.id, "Where you shoot it, as it really is. The camera stays with the performer.");
+    }
+  }
   if (brief) next = { ...next, brief: brief.slice(0, 3000) };
   return approvePlan(next);
 }

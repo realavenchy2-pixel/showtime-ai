@@ -88,6 +88,14 @@ export function LocationCard({ project, scene, lyrics, showGuide = false }: { pr
         </View>
       ) : null}
 
+      {project.backgrounds === 'real' ? (
+        <T v="caption" c="smoke">
+          Shot where you are. No background to pick: what&apos;s behind you is the location.
+        </T>
+      ) : null}
+
+      {project.backgrounds === 'real' ? null : (
+      <>
       <View style={styles.grid}>
         {options.map((o, i) => {
           const on = o.id === picked?.id;
@@ -181,6 +189,8 @@ export function LocationCard({ project, scene, lyrics, showGuide = false }: { pr
       ) : locked && project.shots.length === 0 ? (
         <Button label="Unlock to change it" variant="quiet" onPress={() => apply(project.id, (p) => unlockLocation(p, scene.index))} />
       ) : null}
+      </>
+      )}
 
 
       {showGuide && guide ? (

@@ -251,7 +251,8 @@ export function makeLocations(projectId: string): void {
     !cfg ||
     !project ||
     project.pipeline !== "live" ||
-    !project.live?.references
+    !project.live?.references ||
+    project.backgrounds === "real"
   )
     return;
   for (const ref of locationsToMake(project)) {

@@ -28,7 +28,8 @@ import {
 import { parseCommands, respond, settleAuto } from '../agent';
 import { lockPlan } from '../brief';
 import { nextActions } from '../director';
-import { lockLocation, lockScene, nextScene, reviseLocation, scenesOf } from '../production';
+import { lockLocation, lockScene, nextScene, reviseLocation, scenesOf, setBackgrounds } from '../production';
+import { setupList } from '../shots';
 import { DEMO_TRACKS, songFromDemo, withScenes } from '../samples';
 import { currentStage, isStageDone } from '../stages';
 import { makeFullSong, newBackground, remakeBroll, reshootScene, touchUpBroll, touchUpEdit, touchUpOptions } from '../touchup';
@@ -258,3 +259,51 @@ describe('touch-ups', () => {
     expect(reshoot.messages.at(-1)?.text).toMatch(/There is no scene 9/);
   });
 });
+
+describe('shooting where you are', () => {
+  function realPlanned(): Project {
+    const p = settle(createProject({ song: withScenes(songFromDemo(DEMO_TRACKS[0])), formats: ['9:16'], path: 'vision' }));
+    const picked = pickPart(setBackgrounds(p, 'real'), 'snippet', { start: 40, end: 70 });
+    return lockPlan(picked, { brief: 'In the alley behind my building, then my car at night', places: 'In the alley behind my building, then my car at night', length: 'snippet' });
+  }
+
+  it('plans the real spots with set guides and no backgrounds to pick', () => {
+    const p = realPlanned();
+    expect(p.planApproved).toBe(true);
+    for (const sc of scenesOf(p)) {
+      expect(sc.look?.location).toBe('custom');
+      expect(sc.look?.options ?? []).toEqual([]);
+    }
+    expect(scenesOf(p)[0].look?.prompt).toMatch(/alley behind my building/);
+    const steps = p.guides!.map((g) => g.steps.join(' ')).join(' ');
+    expect(steps).toMatch(/Pick your spot/);
+    expect(steps).not.toMatch(/switch cleanest|plain wall/);
+    expect(p.messages.at(-1)!.text + p.messages.map((m) => m.text).join(' ')).not.toMatch(/empty location/);
+  });
+
+  it('skips the switch, keeps b-roll and the edit, and offers no new backgrounds after', () => {
+    const p = exportedFrom(realPlanned());
+    expect(currentStage(p)).toBeUndefined();
+    expect(p.skipped).toContain('switch');
+    expect(p.shots).toEqual([]);
+    expect(isStageDone(p, 'edit')).toBe(true);
+    expect(touchUpOptions(p).background).toBe(false);
+    expect(newBackground(p, 0)).toBe(p);
+  });
+
+  it('asks for the real thing instead of stand-ins', () => {
+    const g = { pose: 'sit' as const, props: [{ kind: 'seat' as const, for: 'the car seat', say: 'Sit on a chair.' }, { kind: 'stand' as const, for: 'the mic stand', say: 'A broom.' }] };
+    expect(setupList(g, true).map((i) => i.title)).toEqual(['Sit down', 'A mic stand']);
+    expect(setupList(g, true)[1].say).toMatch(/real thing/);
+    expect(setupList(g).map((i) => i.title)).toEqual(['Sit down', 'A stand-in for the mic stand']);
+  });
+
+  it('is decided before the plan locks', () => {
+    const p = realPlanned();
+    expect(setBackgrounds(p, 'new')).toBe(p);
+  });
+});
+
+function exportedFrom(p: Project): Project {
+  return toExport(shootAll(p));
+}

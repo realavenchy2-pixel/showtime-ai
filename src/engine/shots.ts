@@ -580,8 +580,14 @@ const PROP_TITLE: Record<PropKind, string> = {
  * then a stand-in for everything you touch. The switch keeps your body exactly as shot, so the pose
  * and the props have to be real for the scene to look real.
  */
-export function setupList(g: Pick<SetGuide, 'pose' | 'props'>): SetupItem[] {
+export function setupList(g: Pick<SetGuide, 'pose' | 'props'>, real = false): SetupItem[] {
   const props = g.props ?? [];
+  // Shooting where you are, nothing gets rebuilt around you: what's in the shot has to be the real thing.
+  if (real) {
+    const out: SetupItem[] = g.pose === 'stand' ? [] : [{ kind: 'pose', title: POSE_TITLE[g.pose], say: MARK_REAL[g.pose] }];
+    for (const p of props) if (!(g.pose !== 'stand' && POSE_PROP[g.pose].includes(p.kind))) out.push({ kind: p.kind, title: PROP_TITLE_REAL[p.kind], say: "It's in the shot, so use the real thing." });
+    return out;
+  }
   const out: SetupItem[] = [];
   let used: PropKind | undefined;
   if (g.pose !== 'stand') {
@@ -638,6 +644,24 @@ const MARK: Record<Pose, (back: string) => string> = {
   hang: (back) => `Your mark is under what you hang on to, ${back} out from the wall behind you. Arms up, both hands on it.`,
 };
 
+/** Shooting where you are: out from what's behind you, so you don't look pasted on it. */
+const MARK_REAL: Record<Pose, string> = {
+  stand: "Stand on your mark, a step or two out from what's behind you, so the shot has some depth.",
+  lean: 'Lean on the real thing: a wall, a car, a railing. Your mark is right in front of it.',
+  sit: 'Sit where the scene happens: the real seat, the car, the couch, the steps.',
+  hang: 'Hang on to the real thing with both hands, arms up. Make sure it holds you.',
+};
+
+const PROP_TITLE_REAL: Record<PropKind, string> = {
+  bar: 'Something to hang on',
+  stand: 'A mic stand',
+  mic: 'A hanging mic',
+  seat: 'The seat',
+  wall: 'Something to lean on',
+  table: 'A table',
+  steps: 'The steps',
+};
+
 const FILMING: Record<CameraMove, string> = {
   still: 'Someone filming: same spot and height, phone in both hands, held as still as you can.',
   push: 'Someone filming: start at the same spot and height and walk in slowly, about a step over the scene. Keep you in the middle of the frame.',
@@ -662,20 +686,27 @@ export const MOVE_NAME: Record<CameraMove, string> = {
 };
 
 /** The set guide for a called shot: where everything goes and the plain steps to get there. */
-export function buildGuide(scene: number, pick: ShotPick, place: { side: number; light: SetGuide['light'] }): SetGuide {
+export function buildGuide(scene: number, pick: ShotPick, place: { side: number; light: SetGuide['light']; real?: boolean }): SetGuide {
   const rig = rigFor(pick.framing, pick.pose, pick.angle);
-  const { side, light } = place;
+  const { side, light, real } = place;
   const tilt = pick.angle === 'low' ? ', tilted up at you' : pick.angle === 'high' ? ', tilted down at you' : '';
+  // Shooting where you are, what's behind you is the location: pick it for how it looks, not for the switch.
   const steps = [
-    `Find a clear space: a plain wall, nothing busy, and about ${len(rig.backroomM + rig.distance)} from the wall to where the phone goes.`,
-    ...pick.props.map((pr) => `For ${pr.for}: ${pr.say}`),
-    MARK[pick.pose](len(rig.backroomM)),
+    real
+      ? `Pick your spot: somewhere that looks like the scene, a little depth behind you, and about ${len(rig.distance)} clear in front of you for the phone.`
+      : `Find a clear space: a plain wall, nothing busy, and about ${len(rig.backroomM + rig.distance)} from the wall to where the phone goes.`,
+    ...pick.props.map((pr) => (real ? `${PROP_TITLE_REAL[pr.kind]}: it's in the shot, so use the real thing.` : `For ${pr.for}: ${pr.say}`)),
+    real ? MARK_REAL[pick.pose] : MARK[pick.pose](len(rig.backroomM)),
     `Propped up: phone on a tripod or books, ${len(rig.distance)} away${side ? ', a half step off center' : ', straight on'}, ${len(rig.height)} off the floor, about ${heightWord(rig.height, pick.pose)}${tilt}. Stay on your mark; the editor adds the zoom-ins and the handheld feel.`,
     FILMING[pick.move],
     `${IN_FRAME[pick.pose][pick.framing]}, front camera at 1x, so you can watch yourself. Leave a little room around you, so the editor can punch in on the beat.`,
     ...(rig.backDistance ? [`Someone filming on the back camera? ${rig.backZoom}x zoom from ${len(rig.backDistance)} is sharper and kinder to your face.`] : []),
     ...(rig.ultraWideDistance ? [`Short on room? The back camera's 0.5x can come in to ${len(rig.ultraWideDistance)}.`] : []),
-    light === 'behind camera' ? 'Main light behind the phone, pointing at you.' : `Main light on your ${light}, so the background stays clean.`,
+    light === 'behind camera'
+      ? 'Main light behind the phone, pointing at you.'
+      : real
+        ? `Main light on your ${light}, so your face has some shape. Face a window in the day.`
+        : `Main light on your ${light}, so the background stays clean.`,
   ];
   return {
     scene,

@@ -95,6 +95,7 @@ export function LooksStage({ project }: { project: Project }) {
             />
           )
         ) : project.planApproved ? (
+          project.backgrounds === "real" ||
           allLocationsLocked(project) ||
           (project.takes.length > 0 &&
             // After a touch-up added scenes, their backgrounds get locked before the camera comes out.
@@ -117,7 +118,7 @@ export function LooksStage({ project }: { project: Project }) {
           <T v="caption" c="ash" style={styles.center}>
             {thinking
               ? "Writing your shot list."
-              : "Three quick questions and your camera, then the director writes your shot list."}
+              : "A few quick questions and your camera, then the director writes your shot list."}
           </T>
         )
       }

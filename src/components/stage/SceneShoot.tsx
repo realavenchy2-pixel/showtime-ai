@@ -28,13 +28,15 @@ import { T } from '../T';
 export function SceneShoot({ project }: { project: Project }) {
   const scenes = scenesOf(project);
   const next = nextScene(project);
-  const stills = autoStills(project);
+  const real = project.backgrounds === 'real';
+  // Start frames are for the switch: shooting where you are, there's nothing to match.
+  const stills = real ? [] : autoStills(project);
   return (
     <>
       <View style={styles.explain}>
         <T v="heading">How the shoot works</T>
         <T v="caption" c="smoke">
-          1. Before each scene, the set guide shows the shot, where to stand and where to put your phone.{'\n'}2. Record that scene as many times as you want. Shoot it again closer or wider and the editor cuts between the two on the beat.{'\n'}3. Lock it when you&apos;re happy. The AI editor picks your best take.{'\n'}4. I screenshot your best take and match it to the location we planned. No extra steps.
+          1. Before each scene, the set guide shows the shot, where to stand and where to put your phone.{'\n'}2. Record that scene as many times as you want. Shoot it again closer or wider and the editor cuts between the two on the beat.{'\n'}3. Lock it when you&apos;re happy. The AI editor picks your best take.{'\n'}{real ? '4. Then I cut it on the beat. What you shoot is what people see, so pick spots that look good.' : '4. I screenshot your best take and match it to the location we planned. No extra steps.'}
         </T>
       </View>
       {scenes.map((scene) => (

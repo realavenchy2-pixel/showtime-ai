@@ -54,7 +54,7 @@ export function remakeBroll(p: Project, ideaId: string): Project {
  * Only that scene goes through the switch again; every other shot is reused.
  */
 export function newBackground(p: Project, sceneIndex: number, note?: string): Project {
-  if (!canTouchUp(p) || !isStageDone(p, 'switch') || !scenesOf(p)[sceneIndex]) return p;
+  if (!canTouchUp(p) || p.backgrounds === 'real' || !isStageDone(p, 'switch') || !scenesOf(p)[sceneIndex]) return p;
   let next = unlockLocation(revisit(p, 'switch', { quiet: true }), sceneIndex);
   const id = scenesOf(next)[sceneIndex].section.id;
   next = { ...next, looks: { ...next.looks, [id]: { ...next.looks[id], reopened: true } } };
@@ -187,7 +187,7 @@ export function touchUpOptions(p: Project): TouchUpOptions {
   return {
     edit: ok && isStageDone(p, 'edit'),
     broll: ok && (isStageDone(p, 'broll') || p.skipped.includes('broll')),
-    background: ok && isStageDone(p, 'switch'),
+    background: ok && isStageDone(p, 'switch') && p.backgrounds !== 'real',
     reshoot: ok && isStageDone(p, 'shoot'),
     full: ok && !!song && (r.start > 0.5 || r.end < song.durationSec - 0.5),
     nextVersion: (latestVersion(p)?.n ?? 0) + 1,

@@ -15,6 +15,7 @@ import {
   composeBrief,
   removePlanRef,
   setInspiration,
+  setBackgrounds,
   setMustHaves,
   setSongAbout,
   smartSnippetStart,
@@ -54,11 +55,13 @@ export function usePlanLock(project: Project) {
   };
 }
 
-type Step = "part" | "about" | "musts" | "camera";
+type Step = "where" | "part" | "about" | "musts" | "camera";
 const SNIPPETS = [15, 30, 45, 60];
 
 /**
  * Lock in the shoot plan, one question at a time:
+ * 0. Where it happens: switched into new backgrounds, or shot where the artist really is. Asked
+ *    first because everything after depends on it: backgrounds to pick, the set guide, the switch.
  * 1. Which part of the song: a snippet (smart pick, drag or type it) or the full song with the ends trimmed.
  * 2. What the song is about and its message, in your words. Explicit is fine.
  * 3. Must-haves, your references and, on "Work with my vision", the vision itself.
@@ -77,7 +80,13 @@ export function PlanBrief({
   const { thinking, lock } = usePlanLock(project);
   const song = project.song;
   const [step, setStep] = useState<Step>(
-    project.partPicked ? (project.songAbout ? "musts" : "about") : "part",
+    !project.backgrounds
+      ? "where"
+      : project.partPicked
+        ? project.songAbout
+          ? "musts"
+          : "about"
+        : "part",
   );
   const [mode, setMode] = useState<VideoLength>(project.length ?? "snippet");
   const [seconds, setSeconds] = useState(30);
@@ -117,6 +126,12 @@ export function PlanBrief({
   if (!song) return null;
   const busy = project.planApproved || !!project.job || thinking;
   const isVision = project.path === "vision";
+  const real = project.backgrounds === "real";
+  const chooseWhere = (mode: "new" | "real") => {
+    haptic.select();
+    apply(project.id, (p) => setBackgrounds(p, mode));
+    setStep("part");
+  };
 
   const chooseMode = (m: VideoLength) => {
     haptic.select();
@@ -166,9 +181,35 @@ export function PlanBrief({
       <Steps
         step={step}
         onStep={(s) =>
-          s === "part" || project.partPicked ? setStep(s) : undefined
+          s === "where" ||
+          (s === "part" && project.backgrounds) ||
+          project.partPicked
+            ? setStep(s)
+            : undefined
         }
       />
+
+      {step === "where" ? (
+        <View style={styles.group}>
+          <T v="heading">Where does your video happen?</T>
+          <T v="caption" c="smoke">
+            You can shoot anywhere either way. This decides if I build new
+            places around you.
+          </T>
+          <Mode
+            title="Put me somewhere new"
+            detail="Shoot in any room. I switch every scene into its own world: rooftops, stages, the moon. You pick and lock each background."
+            on={project.backgrounds === "new"}
+            onPress={() => chooseWhere("new")}
+          />
+          <Mode
+            title="Shoot where I am"
+            detail="Your real spots, as they are: the block, your car, the studio. No backgrounds to pick, no switch. Cut and edited on the beat."
+            on={real}
+            onPress={() => chooseWhere("real")}
+          />
+        </View>
+      ) : null}
 
       {step === "part" ? (
         <View style={styles.group}>
@@ -350,7 +391,11 @@ export function PlanBrief({
                 onChangeText={setVision}
                 multiline
                 maxLength={1200}
-                placeholder="Open on a rooftop at night, then the trap house kitchen, end on the block with the whole crew."
+                placeholder={
+                  real
+                    ? "Open in my car at night, then the studio, end on the block with the whole crew."
+                    : "Open on a rooftop at night, then the trap house kitchen, end on the block with the whole crew."
+                }
                 placeholderTextColor={color.ash}
                 style={styles.box}
                 accessibilityLabel="Your vision"
@@ -368,7 +413,9 @@ export function PlanBrief({
             multiline
             maxLength={800}
             placeholder={
-              "At least one scene on the moon\nMy chain in a close-up"
+              real
+                ? "A scene in my car\nMy chain in a close-up"
+                : "At least one scene on the moon\nMy chain in a close-up"
             }
             placeholderTextColor={color.ash}
             style={[styles.box, styles.boxSmall]}
@@ -447,9 +494,9 @@ export function PlanBrief({
         <View style={styles.group}>
           <T v="heading">Pick your camera</T>
           <T v="caption" c="smoke">
-            Your backgrounds get made to match it: the light, the lens, the
-            texture. Your footage is saved untouched, so you can change it
-            later.
+            {real
+              ? "Your footage gets this look in the edit: the color, the contrast, the texture. It's saved untouched, so you can change it later."
+              : "Your backgrounds get made to match it: the light, the lens, the texture. Your footage is saved untouched, so you can change it later."}
           </T>
           <CameraLookPicker
             value={project.cameraLook}
@@ -462,7 +509,7 @@ export function PlanBrief({
             onPress={finish}
           />
           <T v="caption" c="ash" style={styles.center}>
-            {`${song?.lyrics.length ? "I read your lyrics and everything you said" : "I go by everything you said and where the song hits hardest"}, then plan every scene and call its shot. Next you'll see the backgrounds and lock each one.`}
+            {`${song?.lyrics.length ? "I read your lyrics and everything you said" : "I go by everything you said and where the song hits hardest"}, then plan every scene and call its shot. ${real ? "Next you get a set guide for each scene." : "Next you'll see the backgrounds and lock each one."}`}
           </T>
         </View>
       ) : null}
@@ -472,10 +519,11 @@ export function PlanBrief({
 
 function Steps({ step, onStep }: { step: Step; onStep: (s: Step) => void }) {
   const all: { id: Step; label: string }[] = [
-    { id: "part", label: "1 · The part" },
-    { id: "about", label: "2 · The song" },
-    { id: "musts", label: "3 · Must-haves" },
-    { id: "camera", label: "4 · Camera" },
+    { id: "where", label: "Where" },
+    { id: "part", label: "Part" },
+    { id: "about", label: "Song" },
+    { id: "musts", label: "Musts" },
+    { id: "camera", label: "Camera" },
   ];
   return (
     <View style={styles.steps}>

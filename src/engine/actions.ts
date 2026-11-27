@@ -10,7 +10,7 @@ import {
   suggestedLooks,
   withScenes,
 } from './samples';
-import { coverageTakes, pitchIdeas, prepareShoot, scenesOf, setPath } from './production';
+import { coverageTakes, isReal, pitchIdeas, prepareShoot, scenesOf, setPath } from './production';
 import { canSkip, currentStage, STAGE_BY_ID, STAGES } from './stages';
 import { recordVersion } from './versions';
 import { plainWords } from './whitelabel';
@@ -690,7 +690,11 @@ export function cutLine(p: Project): string {
 export function lockCut(p: Project): Project {
   if (p.cut.segments.length === 0 || p.cut.locked) return p;
   const before = p;
-  const next: Project = pitchPlan({ ...p, cut: { ...p.cut, locked: true } });
+  let next: Project = pitchPlan({ ...p, cut: { ...p.cut, locked: true } });
+  // Shot where they are: nothing to switch, so the cut goes straight on to b-roll.
+  if (isReal(p) && !next.skipped.includes('switch')) {
+    next = post({ ...next, skipped: [...next.skipped, 'switch'] }, 'director', "No switch on this one: you shot it where you are, so your real spots stay.", { stage: 'switch' });
+  }
   return withIntro(before, next);
 }
 
@@ -750,7 +754,9 @@ export function approvePlan(p: Project): Project {
   const next = post(
     prepareShoot({ ...p, planApproved: true }),
     'director',
-    "Plan's locked. I made the empty location for every scene, so you can see where you're going before you shoot, and a set guide for each one. We shoot one scene at a time.",
+    isReal(p)
+      ? "Plan's locked. Every scene has its shot and a set guide for where you really are. We shoot one scene at a time."
+      : "Plan's locked. I made the empty location for every scene, so you can see where you're going before you shoot, and a set guide for each one. We shoot one scene at a time.",
     { stage: 'looks' },
   );
   return withIntro(before, next);
@@ -774,6 +780,7 @@ export function approvePlates(p: Project): Project {
 // ---------- Switch ----------
 
 export function startSwitch(p: Project, opts: { external?: boolean } = {}): Project {
+  if (isReal(p)) return p;
   // Reference frames come first; the switch starts on its own when they are in.
   if (p.plates === 'none' && !p.job && p.shots.length === 0 && p.cut.locked) return makePlates(p);
   if (p.plates === 'ready') p = { ...p, plates: 'approved' };
@@ -923,7 +930,8 @@ export function approveBroll(p: Project): Project {
  * doesn't (dropped, failed, skipped), goes through the switch so the video has no holes.
  */
 function fillIn(before: Project, p: Project): Project {
-  const extra = missingShots(p);
+  // Shot where they are: the raw take is the picture, nothing to switch.
+  const extra = isReal(p) ? [] : missingShots(p);
   if (extra.length === 0 || p.job) return withIntro(before, p);
   if (extra.every((s) => s.reused)) {
     // Every spot that went back to the performance was already switched for an earlier version.

@@ -67,6 +67,8 @@ export function summarize(p: Project): Record<string, unknown> {
     edit: { built: p.final.builds > 0, locked: p.final.locked },
     exported: p.exportState.done,
     ideas: p.ideas.map((i) => ({ stage: i.stage, text: i.text })),
+    // 'real': the artist shoots where they are. No backgrounds, no switch.
+    backgrounds: p.backgrounds ?? 'new',
     about: p.songAbout?.trim() ? p.songAbout.trim().slice(0, 240) : undefined,
     scenes: scenesOf(p).map((sc) => {
       // What the director reads to call each scene's shot: its words and how hard the song hits there.

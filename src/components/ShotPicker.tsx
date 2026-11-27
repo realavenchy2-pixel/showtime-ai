@@ -29,7 +29,7 @@ export function ShotPicker({ project, scene, guide }: { project: Project; scene:
   const apply = useApp((s) => s.apply);
   const open = canChangeShot(project, scene.index);
   // How you're placed and what you hold: the switch keeps your body exactly as shot, so it has to be real.
-  const needs = setupList(guide);
+  const needs = setupList(guide, project.backgrounds === 'real');
   const where = guide.zoom === 1 ? 'Front camera, 1x' : `${guide.zoom}x zoom`;
   return (
     <View style={styles.wrap}>

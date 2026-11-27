@@ -857,7 +857,7 @@ export function guideFor(
       : scene.index % 2 === 0
         ? "left"
         : "right";
-  return buildGuide(scene.index, pick, { side, light });
+  return buildGuide(scene.index, pick, { side, light, real: p ? isReal(p) : false });
 }
 
 export function makeGuides(p: Project): Project {
@@ -929,7 +929,23 @@ export function recordLabel(p: Project, sceneIndex: number): string | undefined 
 /** Everything the shoot needs, made when the plan locks: a set guide and an empty location for every scene. */
 export function prepareShoot(p: Project, now = Date.now()): Project {
   if (!p.song) return p;
+  // Shooting where you are: set guides, no backgrounds to make.
+  if (isReal(p)) return makeGuides(p);
   return makeLocations(makeGuides(applyMustHaves(p)), now);
+}
+
+/** The artist shoots where they are: no new backgrounds, no switch. */
+export function isReal(p: Project): boolean {
+  return p.backgrounds === "real";
+}
+
+/**
+ * Switch backgrounds or shoot where you are. Asked first in the plan, since everything after it
+ * depends on it: the backgrounds to pick, the set guide, and whether there's a switch at all.
+ */
+export function setBackgrounds(p: Project, mode: "new" | "real"): Project {
+  if (p.planApproved || p.backgrounds === mode) return p;
+  return { ...p, backgrounds: mode };
 }
 
 // ---------- Shooting scene by scene ----------

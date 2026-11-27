@@ -121,7 +121,8 @@ export function stageIntro(p: Project, id: StageId): { text: string; attachment?
     }
     case 'broll': {
       const n = p.broll.ideas.filter((i) => i.keep && i.at !== undefined).length;
-      return { text: n ? `The switch is done. ${n} b-roll ${n === 1 ? 'cutaway is' : 'cutaways are'} next.` : 'The switch is done. No b-roll in the plan, so the edit is next.' };
+      const from = p.backgrounds === 'real' ? 'The cut is locked.' : 'The switch is done.';
+      return { text: n ? `${from} ${n} b-roll ${n === 1 ? 'cutaway is' : 'cutaways are'} next.` : `${from} No b-roll in the plan, so the edit is next.` };
     }
     case 'edit':
       return { text: "Everything's in. I'm building the edit: cuts on the grid, b-roll placed, effects on the beat." };
