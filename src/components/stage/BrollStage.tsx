@@ -60,13 +60,13 @@ export function BrollStage({ project }: { project: Project }) {
             {back ? null : <Button label="Skip b-roll" variant="quiet" onPress={() => apply(project.id, (p) => skipStage(p, 'broll'))} />}
           </>
         ) : (
-          <WrappedNote text="These generate after the switch. Their spots are set now, so the switch skips those seconds." />
+          <WrappedNote text={project.backgrounds === 'real' ? 'These generate after the cut. Their spots are set now.' : 'These generate after the switch. Their spots are set now, so the switch skips those seconds.'} />
         )
       }>
       {ideas.some((i) => i.status !== 'idea') ? <PlayerView project={project} effects={false} cue={cue} label="Cut with b-roll" /> : null}
 
       <View style={stageStyles.block}>
-        <SectionTitle detail={`${cutawaySummary(project)} Dropping one after the switch sends that spot back to the switch.`}>Cutaways</SectionTitle>
+        <SectionTitle detail={`${cutawaySummary(project)}${project.backgrounds === 'real' ? ' Drop one and that spot goes back to your take.' : ' Dropping one after the switch sends that spot back to the switch.'}`}>Cutaways</SectionTitle>
         {orderedCutaways(project).map((idea) => (
           <CutawayRow
             key={idea.id}

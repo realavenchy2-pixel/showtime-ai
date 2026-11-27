@@ -140,7 +140,7 @@ const HANG = /\b(hang(s|ing)? (off|from)|hang(s|ing)? out (of|the)|out (of )?the
 const MIC_STAND = /\b(mic|microphone) stands?\b/;
 const MIC = /\b(mic stands?|microphone stands?|mics?|microphones?|vocal booth|the booth)\b/;
 const IN_CAR =
-  /\b(in the (car|whip|truck|jeep|back ?seat|front seat)|(driver'?s?|passenger|front|back) seat|behind the wheel|driving|riding shotgun|shotgun|in (a|my|the|his|her) (lambo|lamborghini|ferrari|bentley|rolls|rolls[- ]royce|maybach|benz|mercedes|bmw|tesla|range rover|cadillac|escalade|g-?wagon|hellcat|charger|camaro|mustang|porsche|mclaren|bugatti|corvette)|inside (a|the|my) (car|truck|jeep|whip))\b/;
+  /\b(in (the|my|a|his|her|our) (car|whip|truck|jeep|back ?seat|front seat)|(driver'?s?|passenger|front|back) seat|behind the wheel|driving|riding shotgun|shotgun|in (a|my|the|his|her) (lambo|lamborghini|ferrari|bentley|rolls|rolls[- ]royce|maybach|benz|mercedes|bmw|tesla|range rover|cadillac|escalade|g-?wagon|hellcat|charger|camaro|mustang|porsche|mclaren|bugatti|corvette)|inside (a|the|my) (car|truck|jeep|whip))\b/;
 const RIDE = /\b(on (a|the|my) (motorcycle|motorbike|bike|dirt ?bike|scooter|four[- ]wheeler|atv|horse|jet ?ski)|riding (a |the |my )?(motorcycle|motorbike|bike|dirt ?bike|scooter|four[- ]wheeler|atv|horse|jet ?ski))\b/;
 const JET = /\b(private jet|(on|in) (a|the) (jet|plane)|airplane)\b/;
 const SEATED = /\b(couch|sofa|bed|armchair|chair|bench|stool|sitting|seated|sits|sit)\b/;

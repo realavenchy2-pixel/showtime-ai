@@ -74,6 +74,10 @@ describe("the director's shot calls", () => {
     expect(pick.props[0]).toMatchObject({ kind: 'seat', for: 'the car seat' });
   });
 
+  it('reads "me in my car" as a car seat', () => {
+    expect(callShot(read({ plan: 'Me in my car at night' }))).toMatchObject({ framing: 'medium', pose: 'sit' });
+  });
+
   it('keeps all of you in frame hanging off a helicopter, with a bar to grab', () => {
     const pick = callShot(read({ plan: 'Hanging off a helicopter over the city' }));
     expect(pick).toMatchObject({ framing: 'wide', pose: 'hang' });

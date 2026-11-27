@@ -1,8 +1,9 @@
 import { router } from 'expo-router';
 import { Image } from 'expo-image';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Check, Lock, Sparkles, X } from '@/components/icons';
+import { Check, ChevronDown, ChevronUp, Lock, Sparkles, X } from '@/components/icons';
 import { removeTake } from '@/engine/actions';
 import { formatTime } from '@/engine/director';
 import { autoStills, canChangeShot, coverageTakes, isSceneLocked, lockScene, locationRef, nextScene, sceneName, scenesOf, setSceneShot, takesFor, unlockScene, type Scene } from '@/engine/production';
@@ -91,6 +92,7 @@ function SceneBlock({ project, scene, open }: { project: Project; scene: Scene; 
   const ref = locationRef(scene.look);
   const kind = scene.look && scene.look.location !== 'custom' ? scene.look.location : 'darkVoid';
   const record = () => router.push(`/project/${project.id}/record?scene=${scene.index}`);
+  const [allSteps, setAllSteps] = useState(false);
 
   return (
     <View style={[styles.scene, open && styles.sceneOpen]}>
@@ -118,9 +120,18 @@ function SceneBlock({ project, scene, open }: { project: Project; scene: Scene; 
         <>
           <ShotPicker project={project} scene={scene} guide={guide} />
           <SetGuide3D guide={guide} height={240} />
-          {guide.steps.map((step, i) => (
-            <T key={i} v="caption" c="smoke">{`${i + 1}. ${step}`}</T>
-          ))}
+          {/* The 3D and the list above show most of it: the full steps are one tap away. */}
+          <Press onPress={() => setAllSteps((v) => !v)} style={styles.stepsToggle} accessibilityRole="button" accessibilityState={{ expanded: allSteps }}>
+            <T v="callout" c="chalk">
+              {allSteps ? 'Hide the steps' : `Show all ${guide.steps.length} steps`}
+            </T>
+            {allSteps ? <ChevronUp size={18} color={color.smoke} /> : <ChevronDown size={18} color={color.smoke} />}
+          </Press>
+          {allSteps
+            ? guide.steps.map((step, i) => (
+                <T key={i} v="caption" c="smoke">{`${i + 1}. ${step}`}</T>
+              ))
+            : null}
         </>
       ) : null}
 
@@ -210,6 +221,7 @@ const styles = StyleSheet.create({
   bestPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: space.s, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: color.accentSoft },
   actions: { flexDirection: 'row', gap: space.s },
   cover: { gap: space.xs },
+  stepsToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: space.s },
   matchRow: { flexDirection: 'row', alignItems: 'center', gap: space.s },
   matchThumb: { width: 64, height: 40, borderRadius: radius.s, overflow: 'hidden', backgroundColor: color.flat },
 });

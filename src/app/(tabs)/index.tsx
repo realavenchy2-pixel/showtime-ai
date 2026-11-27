@@ -9,6 +9,7 @@ import { Press } from '@/components/Press';
 import { ProgressTicks } from '@/components/ProgressTicks';
 import { T } from '@/components/T';
 import { trackerView } from '@/engine/stages';
+import { formatCredits } from '@/engine/actions';
 import { useApp } from '@/engine/store';
 import type { Project } from '@/engine/types';
 import { coverFor } from '@/lib/preview';
@@ -39,12 +40,12 @@ export default function VideosScreen() {
           <View style={styles.header}>
             <View style={styles.topRow}>
               <Image source={require('../../../assets/images/logo-lockup.png')} style={styles.logo} resizeMode="contain" accessibilityRole="header" accessibilityLabel="Showtime AI" />
-              <Press onPress={() => router.push('/paywall')} style={styles.credits} accessibilityLabel={`${credits} video credits. Get more`}>
+              <Press onPress={() => router.push('/paywall')} style={styles.credits} accessibilityLabel={`${formatCredits(credits)}. Get more`}>
                 <T v="label" c="chalk">
-                  {String(credits)}
+                  {formatCredits(credits).split(' ')[0]}
                 </T>
                 <T v="caption" c="smoke">
-                  {credits === 1 ? 'credit' : 'credits'}
+                  {formatCredits(credits).split(' ')[1]}
                 </T>
               </Press>
             </View>

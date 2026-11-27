@@ -3,7 +3,7 @@ import { PlayCircle } from '@/components/icons';
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { STAGE_BY_ID, stageStatus } from '@/engine/stages';
+import { STAGE_BY_ID, stageNumber, stageStatus } from '@/engine/stages';
 import type { Project, StageId } from '@/engine/types';
 import { color, radius, space } from '@/theme/tokens';
 
@@ -27,7 +27,7 @@ export function StageScreen({ project, stage, children, footer }: Props) {
     <Screen
       header={
         <Header
-          kicker={`Stage ${String(def.n).padStart(2, '0')}${def.optional ? ', optional' : ''}`}
+          kicker={`Stage ${String(stageNumber(project, stage)).padStart(2, '0')}${def.optional ? ', optional' : ''}`}
           title={def.title}
           fallback={`/project/${project.id}`}
           right={<StageGlyph status={status} />}

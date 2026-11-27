@@ -27,7 +27,7 @@ export function cutawaySummary(p: Project): string {
   const r = videoRange(p);
   const total = Math.round(windows.reduce((sum, w) => sum + (w.end - w.start), 0));
   const length = Math.round(r.end - r.start);
-  const switchNote = p.shots.length === 0 ? ' The switch skips those seconds, so you only pay for what plays.' : '';
+  const switchNote = p.shots.length === 0 && p.backgrounds !== 'real' ? ' The switch skips those seconds, so you only pay for what plays.' : '';
   return `${windows.length} ${windows.length === 1 ? 'cutaway' : 'cutaways'}, ${total} s of a ${length} s video.${switchNote}`;
 }
 

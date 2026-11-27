@@ -92,6 +92,8 @@ export function stageStatus(p: Project, id: StageId): StageStatus {
 
 export interface TrackerStage {
   def: StageDef;
+  /** Its number in this video. */
+  n: number;
   status: StageStatus;
   /** 0 to 1 while a job runs for this stage. */
   progress?: number;
@@ -107,11 +109,22 @@ export interface TrackerView {
   wrapped: boolean;
 }
 
+/** The stages this video goes through. Shot where you are, there's no switch to show. */
+export function stagesFor(p: Project): StageDef[] {
+  return p.backgrounds === 'real' ? STAGES.filter((s) => s.id !== 'switch') : STAGES;
+}
+
+/** A stage's number as the artist sees it, counting only the stages this video has. */
+export function stageNumber(p: Project, id: StageId): number {
+  const i = stagesFor(p).findIndex((s) => s.id === id);
+  return i >= 0 ? i + 1 : STAGE_BY_ID[id].n;
+}
+
 export function trackerView(p: Project): TrackerView {
-  const stages = STAGES.map((def) => {
+  const stages = stagesFor(p).map((def, i) => {
     const status = stageStatus(p, def.id);
     const progress = status === 'working' && p.job ? p.job.progress : undefined;
-    return { def, status, progress };
+    return { def, n: i + 1, status, progress };
   });
   const current = currentStage(p);
   const completed = stages.filter((s) => s.status === 'done' || s.status === 'skipped').length;
@@ -120,7 +133,7 @@ export function trackerView(p: Project): TrackerView {
     current,
     currentStatus: current ? stageStatus(p, current.id) : undefined,
     completed,
-    total: STAGES.length,
+    total: stages.length,
     wrapped: !current,
   };
 }

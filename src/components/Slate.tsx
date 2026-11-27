@@ -12,7 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Polygon, Rect } from 'react-native-svg';
 
-import { trackerView } from '@/engine/stages';
+import { stageNumber, trackerView } from '@/engine/stages';
 import type { Project, StageId } from '@/engine/types';
 import { haptic } from '@/lib/haptics';
 import { statusLine } from '@/lib/status';
@@ -69,7 +69,7 @@ export function Slate({ project, expanded, onToggle, onRevisit }: Props) {
   const clapper = useAnimatedStyle(() => ({ transform: [{ rotate: `${tilt.get()}deg` }] }));
 
   const stage = view.current;
-  const scene = stage ? String(stage.n).padStart(2, '0') : String(view.total).padStart(2, '0');
+  const scene = String(stage ? stageNumber(project, stage.id) : view.total).padStart(2, '0');
   const title = stage ? stage.title : "That's a wrap";
   const working = view.currentStatus === 'working';
 
@@ -119,7 +119,7 @@ export function Slate({ project, expanded, onToggle, onRevisit }: Props) {
                 style={styles.row}>
                 <StageGlyph status={s.status} />
                 <T v="label" c={s.status === 'locked' || s.status === 'skipped' ? 'ash' : 'chalk'} style={styles.rowNum}>
-                  {String(s.def.n).padStart(2, '0')}
+                  {String(s.n).padStart(2, '0')}
                 </T>
                 <View style={styles.rowText}>
                   <T v="callout" c={s.status === 'locked' ? 'smoke' : 'chalk'} numberOfLines={1}>

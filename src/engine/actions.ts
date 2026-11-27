@@ -1048,13 +1048,28 @@ const RES_RANK: Record<Resolution, number> = { '720p': 0, '1080p': 1, '1440p': 2
  *   bigger than it has been on Standard, which still costs the upscale credit once. Without a plan,
  *   a touch-up costs what a new export does.
  */
+/**
+ * A video shot where you are costs half: no switch, so it's much cheaper to make. At $79 a credit
+ * that's about $40 a video, low enough to make one for every song, and the switch is the step up.
+ */
+export const REAL_VIDEO_CREDITS = 0.5;
+
+/** "½ credit", "1 credit", "1½ credits". */
+export function formatCredits(n: number): string {
+  const whole = Math.floor(n);
+  const half = n - whole >= 0.5;
+  const shown = half ? (whole ? `${whole}½` : '½') : String(whole);
+  return `${shown} ${n > 0 && n <= 1 ? 'credit' : 'credits'}`;
+}
+
 export function exportCost(p: Project, plan: PlanId = 'Free trial'): number {
   const res = p.exportState.resolution;
+  const base = isReal(p) ? REAL_VIDEO_CREDITS : 1;
   const upscale = needsUpscale(res) && plan !== 'Premium' ? 1 : 0;
   // Starlight rebuilds detail frame by frame and costs about three times Proteus, on every export and every plan.
   const detail = needsUpscale(res) && p.exportState.upscaler === 'detail' ? 1 : 0;
   const versions = p.versions ?? [];
-  if (versions.length === 0 || !isSubscribed(plan)) return 1 + upscale + detail;
+  if (versions.length === 0 || !isSubscribed(plan)) return base + upscale + detail;
   const beenThisBig = versions.some((v) => RES_RANK[v.resolution] >= RES_RANK[res]);
   return (upscale && !beenThisBig ? 1 : 0) + detail;
 }

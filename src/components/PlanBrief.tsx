@@ -204,7 +204,7 @@ export function PlanBrief({
           />
           <Mode
             title="Shoot where I am"
-            detail="Your real spots, as they are: the block, your car, the studio. No backgrounds to pick, no switch. Cut and edited on the beat."
+            detail="Your real spots, as they are: the block, your car, the studio. No backgrounds to pick, no switch. Cut and edited on the beat, for half a credit."
             on={real}
             onPress={() => chooseWhere("real")}
           />
@@ -374,6 +374,15 @@ export function PlanBrief({
             disabled={busy || !about.trim()}
             onPress={saveAbout}
           />
+          {isVision ? null : (
+            // Letting the director drive: it can go by the song alone.
+            <Button
+              label="Skip, you decide"
+              variant="quiet"
+              disabled={busy}
+              onPress={() => setStep("musts")}
+            />
+          )}
         </View>
       ) : null}
 
@@ -402,6 +411,14 @@ export function PlanBrief({
               />
             </>
           ) : null}
+          {isVision ? null : (
+            <Button
+              label="Skip to the camera"
+              variant="quiet"
+              disabled={busy}
+              onPress={saveMusts}
+            />
+          )}
           <T v="heading">Any must-haves?</T>
           <T v="caption" c="smoke">
             Anything the video has to have, one per line. Leave it empty and I

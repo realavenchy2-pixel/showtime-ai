@@ -9,6 +9,7 @@ import {
   createProject,
   deliverAt,
   exportCost,
+  formatCredits,
   exportVideo,
   finishJob,
   finishShooting,
@@ -31,7 +32,7 @@ import { nextActions } from '../director';
 import { lockLocation, lockScene, nextScene, reviseLocation, scenesOf, setBackgrounds } from '../production';
 import { setupList } from '../shots';
 import { DEMO_TRACKS, songFromDemo, withScenes } from '../samples';
-import { currentStage, isStageDone } from '../stages';
+import { currentStage, isStageDone, stageNumber, stagesFor, trackerView } from '../stages';
 import { makeFullSong, newBackground, remakeBroll, reshootScene, touchUpBroll, touchUpEdit, touchUpOptions } from '../touchup';
 import type { Project } from '../types';
 import { latestVersion, versionSlug } from '../versions';
@@ -296,6 +297,23 @@ describe('shooting where you are', () => {
     expect(setupList(g, true).map((i) => i.title)).toEqual(['Sit down', 'A mic stand']);
     expect(setupList(g, true)[1].say).toMatch(/real thing/);
     expect(setupList(g).map((i) => i.title)).toEqual(['Sit down', 'A stand-in for the mic stand']);
+  });
+
+  it('costs half a credit, touch-ups too without a plan, and hides the switch stage', () => {
+    const p = realPlanned();
+    expect(exportCost(p, 'Free trial')).toBe(0.5);
+    expect(exportCost(planned(), 'Free trial')).toBe(1);
+    const done = exportedFrom(p);
+    expect(exportCost(touchUpEdit(done), 'Free trial')).toBe(0.5);
+    expect(exportCost(touchUpEdit(done), 'Standard')).toBe(0);
+    expect(formatCredits(0.5)).toBe('½ credit');
+    expect(formatCredits(1)).toBe('1 credit');
+    expect(formatCredits(2.5)).toBe('2½ credits');
+    expect(formatCredits(0)).toBe('0 credits');
+    expect(stagesFor(p).map((s) => s.id)).not.toContain('switch');
+    expect(stageNumber(p, 'broll')).toBe(5);
+    expect(stageNumber(planned(), 'broll')).toBe(6);
+    expect(trackerView(done).total).toBe(7);
   });
 
   it('is decided before the plan locks', () => {

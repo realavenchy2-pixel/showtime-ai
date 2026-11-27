@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { Check, Monitor, Smartphone } from '@/components/icons';
-import { exportCost, isSubscribed, setExportFormats, setResolution, setUpscaler } from '@/engine/actions';
+import { exportCost, formatCredits, isSubscribed, setExportFormats, setResolution, setUpscaler } from '@/engine/actions';
 import { stageStatus } from '@/engine/stages';
 import { useApp } from '@/engine/store';
 import type { Format, Project, Resolution, UpscaleLook } from '@/engine/types';
@@ -49,7 +49,7 @@ export function ExportStage({ project }: { project: Project }) {
   // Max detail is priced on its own chip, so sizes are priced with the clean upscale.
   const extraAt = (resolution: Resolution) =>
     exportCost({ ...project, exportState: { ...state, resolution, upscaler: 'clean' } }, plan) - exportCost({ ...project, exportState: { ...state, resolution: '1080p' } }, plan);
-  const plusCredits = (n: number) => `+${n} ${n === 1 ? 'credit' : 'credits'}`;
+  const plusCredits = (n: number) => `+${formatCredits(n)}`;
   const sizeNote = (resolution: Resolution) => (blocked(resolution) ? 'Needs the studio server' : extraAt(resolution) > 0 ? plusCredits(extraAt(resolution)) : 'Included');
   // What max detail adds over the clean upscale, at the size picked.
   const detailExtra =
@@ -73,8 +73,8 @@ export function ExportStage({ project }: { project: Project }) {
 
   const latest = latestVersion(project);
   const subscribed = isSubscribed(plan);
-  const exportLabel = latest ? `Export v${latest.n + 1}, ${cost === 0 ? 'free' : `${cost} ${cost === 1 ? 'credit' : 'credits'}`}` : `Export, ${cost} ${cost === 1 ? 'credit' : 'credits'}`;
-  const priceNote = latest ? (subscribed ? 'Touch-ups are free on your plan.' : `You have ${credits} ${credits === 1 ? 'credit' : 'credits'}. Touch-ups are free on a plan.`) : `You have ${credits} ${credits === 1 ? 'credit' : 'credits'}.`;
+  const exportLabel = latest ? `Export v${latest.n + 1}, ${cost === 0 ? 'free' : formatCredits(cost)}` : `Export, ${formatCredits(cost)}`;
+  const priceNote = latest ? (subscribed ? 'Touch-ups are free on your plan.' : `You have ${formatCredits(credits)}. Touch-ups are free on a plan.`) : `You have ${formatCredits(credits)}.`;
 
   return (
     <StageScreen

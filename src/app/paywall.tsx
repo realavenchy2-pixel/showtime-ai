@@ -21,19 +21,19 @@ const PLANS: { id: Exclude<PlanId, 'Free trial'>; price: string; credits: number
     id: 'Standard',
     price: '$149 a month',
     credits: 2,
-    perks: ['2 videos a month', 'Free touch-ups on every video', 'Generated at 720p, upscaled to 1080p', 'All VFX packs'],
+    perks: ['2 videos a month, or 4 shot where you are', 'Free touch-ups on every video', 'Generated at 720p, upscaled to 1080p', 'All VFX packs'],
   },
   {
     id: 'Premium',
     price: '$299 a month',
     credits: 2,
-    perks: ['2 videos a month at native 1080p', 'Free touch-ups on every video', '4K export included', 'Priority rendering'],
+    perks: ['2 videos a month at native 1080p, or 4 shot where you are', 'Free touch-ups on every video', '4K export included', 'Priority rendering'],
   },
 ];
 
 const PACKS = [
-  { credits: 1, price: '$79', note: 'One video' },
-  { credits: 3, price: '$199', note: 'Three videos, save $38' },
+  { credits: 1, price: '$79', note: 'One video, or two shot where you are' },
+  { credits: 3, price: '$199', note: 'Three videos, or six shot where you are. Save $38' },
 ];
 
 export default function PaywallScreen() {
@@ -101,7 +101,7 @@ export default function PaywallScreen() {
       </View>
 
       <View style={styles.block}>
-        <SectionTitle detail="Credits never expire. Without a plan, a touch-up export is 1 credit.">One-off credits</SectionTitle>
+        <SectionTitle detail="Credits never expire. A video shot where you are is half a credit. Without a plan, a touch-up export costs the same as the video.">One-off credits</SectionTitle>
         {PACKS.map((pack) => (
           <View key={pack.credits} style={styles.pack}>
             <View style={styles.packText}>
