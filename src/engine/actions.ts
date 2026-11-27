@@ -10,7 +10,7 @@ import {
   suggestedLooks,
   withScenes,
 } from './samples';
-import { bestTake, pitchIdeas, prepareShoot, scenesOf, setPath } from './production';
+import { coverageTakes, pitchIdeas, prepareShoot, scenesOf, setPath } from './production';
 import { canSkip, currentStage, STAGE_BY_ID, STAGES } from './stages';
 import { recordVersion } from './versions';
 import { plainWords } from './whitelabel';
@@ -107,7 +107,15 @@ export function setRange(p: Project, range: { start: number; end: number } | und
   // Scenes are laid out over the video, so a new length means new scenes and a fresh pitch.
   const scened = p.song.sections.some((s) => s.scene);
   const song = scened ? withScenes(p.song, r) : p.song;
-  const next: Project = { ...p, range: r, song, looks: scened ? {} : p.looks, broll: { ...p.broll, ideas: p.broll.ideas.filter((i) => i.fromInbox) } };
+  const next: Project = {
+    ...p,
+    range: r,
+    song,
+    looks: scened ? {} : p.looks,
+    // New scenes, new shots.
+    shotCalls: scened ? undefined : p.shotCalls,
+    broll: { ...p.broll, ideas: p.broll.ideas.filter((i) => i.fromInbox) },
+  };
   return pitchPlan(next);
 }
 
@@ -418,12 +426,15 @@ export function addTake(p: Project, input: NewTake): Project {
   const start = clamp(input.fromSec, 0, song.durationSec);
   const end = clamp(start + input.durationSec, start, song.durationSec);
   if (end - start < 0.5) return before;
+  // Shot for a scene: the take keeps the scene's framing, so the cut knows its coverage.
+  const guide = input.scene === undefined ? undefined : p.guides?.[input.scene];
+  const planned: TakeAngle | undefined = guide ? (guide.angle === 'low' ? 'Low angle' : guide.framing === 'close' ? 'Close-up' : 'Wide') : undefined;
   const take: Take = {
     id: uid('take'),
     n,
     source: input.source,
     label: input.label ?? `Take ${n}`,
-    angle: input.angle ?? p.takePlan[n - 1]?.angle ?? 'Wide',
+    angle: input.angle ?? planned ?? p.takePlan[n - 1]?.angle ?? 'Wide',
     hookOnly: input.hookOnly || undefined,
     start: round(start),
     end: round(end),
@@ -437,6 +448,7 @@ export function addTake(p: Project, input: NewTake): Project {
     sync: input.sync ?? 'clock',
     flag: input.flag,
     scene: input.scene,
+    ...(guide ? { framing: guide.framing } : {}),
   };
   let next: Project = { ...p, takes: [...p.takes, take] };
   next = post(next, 'director', takeLine(next, take), { stage: 'shoot' });
@@ -564,11 +576,12 @@ export function buildCut(p: Project, seed = p.cut.seed): CutSegment[] {
   const beatDown = (x: number) => round(song.downbeatSec + Math.floor((x - song.downbeatSec) / beat + 1e-6) * beat);
 
   const range = videoRange(p);
-  // Scenes shot one at a time: the AI editor's best take carries its scene.
-  const bestBySection = new Map<string, string>();
+  // Scenes shot one at a time: the AI editor's best take carries its scene. A scene shot again at
+  // another framing is carried by the best take of each, and the cut moves between them on the beat.
+  const carryBySection = new Map<string, Set<string>>();
   for (const scene of scenesOf(p)) {
-    const best = bestTake(p, scene.index);
-    if (best) bestBySection.set(scene.section.id, best.id);
+    const carry = coverageTakes(p, scene.index);
+    if (carry.length) carryBySection.set(scene.section.id, new Set(carry.map((t) => t.id)));
   }
   for (const whole of song.sections) {
     // Only the part of the song the video covers gets cut.
@@ -603,8 +616,8 @@ export function buildCut(p: Project, seed = p.cut.seed): CutSegment[] {
         const to = edges[i + 1];
         const hook = section.kind === 'hook';
         const covering = p.takes.filter((take) => take.start <= from + 0.05 && take.end >= to - 0.05 && (hook || !take.hookOnly));
-        const best = bestBySection.get(section.id);
-        const pool = best && covering.some((t) => t.id === best) ? covering.filter((t) => t.id === best || t.scene === undefined) : covering;
+        const carry = carryBySection.get(section.id);
+        const pool = carry && covering.some((t) => carry.has(t.id)) ? covering.filter((t) => carry.has(t.id) || t.scene === undefined) : covering;
         const order = hook ? HOOK_ANGLES : VERSE_ANGLES;
         const rank = (take: Take) => (order.indexOf(take.angle) + (hook ? 0 : Math.abs(seed))) % order.length;
         // A take with a note on it still gets screen time, just less: it waits two extra turns.

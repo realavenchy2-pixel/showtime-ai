@@ -31,13 +31,14 @@ import { buildShots } from './broll';
 import { nextActions, STAGE_WORD } from './director';
 import { FX_EFFECTS, FX_PACKS } from './fx';
 import { routeIdea } from './ideas';
-import { scenesOf } from './production';
+import { isSceneLocked, scenesOf, setSceneShot } from './production';
+import { FRAMING_NAME } from './shots';
 import { plainWords } from './whitelabel';
 import { locationTitle, LOCATIONS } from './samples';
 import { currentStage, stageDef, stageStatus } from './stages';
 import { BROLL_CREDITS_PER_SEC, REFERENCE_CREDITS, switchCredits } from './switchx';
 import { makeFullSong, newBackground, remakeBroll, reshootScene, touchUpBroll, touchUpEdit } from './touchup';
-import type { Autonomy, FxEffectId, FxIntensity, FxPackId, LocationKind, Project, SectionKind, StageId } from './types';
+import type { Autonomy, Framing, FxEffectId, FxIntensity, FxPackId, LocationKind, Project, SectionKind, ShotAngle, StageId } from './types';
 
 // The agent: what the director does on its own, and what it does when the artist talks to it.
 
@@ -115,7 +116,8 @@ export type AgentCommand =
   | { type: 'reshootScene'; scene: number }
   | { type: 'newBackground'; scene: number; note?: string }
   | { type: 'makeFull' }
-  | { type: 'remakeBroll'; n: number };
+  | { type: 'remakeBroll'; n: number }
+  | { type: 'setShot'; scene: number; framing: Framing; angle?: ShotAngle; why?: string };
 
 export interface CommandResult {
   project: Project;
@@ -233,6 +235,19 @@ export function applyCommand(p: Project, cmd: AgentCommand): CommandResult {
       if (next === open.project) return { project: p, ok: false, note: idea.clipId ? "That one is your own clip, so there's nothing to remake." : "That clip hasn't been made yet." };
       return { project: next, ok: true, note: [open.note, `Making b-roll ${cmd.n} again.`].filter(Boolean).join(' ') };
     }
+    case 'setShot': {
+      if (cmd.scene < 1 || (sceneCount && cmd.scene > sceneCount)) return { project: p, ok: false, note: `There is no scene ${cmd.scene}. This video has ${sceneCount}.` };
+      const i = cmd.scene - 1;
+      // With a reason, it's the director's call; without one, the director is doing what the artist asked.
+      const next = setSceneShot(p, i, cmd.framing, { by: cmd.why ? 'director' : 'artist', angle: cmd.angle, why: cmd.why });
+      const name = FRAMING_NAME[cmd.framing].toLowerCase();
+      const blocked = p.shootLocked
+        ? `The shoot is wrapped. Reshoot scene ${cmd.scene} to change its shot.`
+        : isSceneLocked(p, i)
+          ? `Scene ${cmd.scene} is locked. Unlock it to change the shot.`
+          : `Scene ${cmd.scene} is already a ${name}.`;
+      return result(next, `Scene ${cmd.scene} is a ${name} now. The set guide moved with it.`, blocked);
+    }
     case 'idea': {
       const status = stageStatus(p, cmd.stage);
       const next = addIdea(p, cmd.text, cmd.stage);
@@ -262,6 +277,12 @@ const SECTION_WORDS: [RegExp, string][] = [
   [/\bintro\b/, 'intro'],
   [/\boutro\b/, 'outro'],
   [/\bbridge\b/, 'bridge'],
+];
+
+const FRAMING_WORDS: [RegExp, Framing][] = [
+  [/\b(close[- ]?ups?|closeups?|get closer|tighter)\b/, 'close'],
+  [/\b(wide shot|go wide|wider|full body|head to toe)\b|\bwide\b(?! (open|awake))/, 'wide'],
+  [/\b(medium( shot)?|waist[- ]up|mid shot)\b/, 'medium'],
 ];
 
 const EFFECT_WORDS: [RegExp, FxEffectId][] = [
@@ -299,6 +320,16 @@ export function parseCommands(input: string, p: Project): AgentCommand[] {
   if (/\b(full|whole|entire|rest of the) (song|track)\b/.test(text) && /\b(make|turn|do|go|extend|want|shoot|let'?s|finish)\b/.test(text) && !LOCATION_WORDS.some(([re]) => re.test(text))) out.push({ type: 'makeFull' });
   const remake = text.match(/\b(remake|redo|re-?do|swap|another|new)\b[^.]*?\bb-?roll (\d+)\b|\bb-?roll (\d+)\b[^.]*?\b(again|remake|swap|over)\b/);
   if (remake) out.push({ type: 'remakeBroll', n: Number(remake[2] ?? remake[3]) });
+
+  // Shots: "make scene 2 a close-up", "go wide on scene 3", "low angle for scene 1".
+  const shotScene = text.match(/\bscene (\d+)\b/);
+  const framing = FRAMING_WORDS.find(([re]) => re.test(text))?.[1];
+  const angle: ShotAngle | undefined = /\blow angle\b|\bfrom below\b/.test(text) ? 'low' : /\bhigh angle\b|\bfrom above\b/.test(text) ? 'high' : undefined;
+  if (shotScene && !background && (framing || angle)) {
+    const n = Number(shotScene[1]);
+    const current = p.guides?.[n - 1]?.framing ?? p.shotCalls?.[scenesOf(p)[n - 1]?.section.id ?? '']?.framing ?? 'medium';
+    out.push({ type: 'setShot', scene: n, framing: framing ?? current, ...(angle ? { angle } : {}) });
+  }
 
   const redo = text.match(/\b(redo|rerun|re-?do|again)\b.*?\bshot (\d+)\b|\bshot (\d+)\b.*?\b(redo|again|over)\b/);
   if (redo) out.push({ type: 'redoShot', n: Number(redo[2] ?? redo[3]) });

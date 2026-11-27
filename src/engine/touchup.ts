@@ -4,7 +4,7 @@ import { formatTime } from './director';
 import { guideFor, makeLocations, reviseLocation, sceneName, scenesOf, unlockLocation, unlockScene } from './production';
 import { BROLL_MODEL, BROLL_RETRY_MODEL, pitchBroll, scenesFor, suggestedLooks } from './samples';
 import { isStageDone } from './stages';
-import type { BrollIdea, Project, Section } from './types';
+import type { BrollIdea, Project, Section, SetGuide } from './types';
 import { latestVersion } from './versions';
 
 // Touch-ups: the video is never finished for good. At any point after the first export the artist
@@ -138,11 +138,12 @@ export function makeFullSong(p: Project, target?: { start: number; end: number }
     ...next,
     takes: next.takes.map((t) => (t.scene === undefined ? t : { ...t, scene: moved(t.scene) })),
     sceneLocks: locks,
-    guides: newScenes.map((scene) => {
+    guides: newScenes.reduce<SetGuide[]>((guides, scene) => {
       const was = oldScenes.findIndex((o) => o.section.id === scene.section.id);
       const guide = was >= 0 ? p.guides?.[was] : undefined;
-      return guide ? { ...guide, scene: scene.index } : guideFor(scene);
-    }),
+      // New scenes get the director's shot, read against the scenes around them.
+      return [...guides, guide ? { ...guide, scene: scene.index } : guideFor(scene, next, guides.map((g) => g.framing))];
+    }, []),
     library: next.library?.map((item) => (item.scene === undefined ? item : { ...item, scene: moved(item.scene) })),
   };
   next = makeLocations(next, now);

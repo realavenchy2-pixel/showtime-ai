@@ -98,6 +98,8 @@ export interface Take {
   flag?: string;
   /** Recorded for this scene of the plan (0-based, in order). Scenes are shot one at a time. */
   scene?: number;
+  /** The scene's framing when the take was shot. A scene shot at two framings gives the cut coverage. */
+  framing?: Framing;
 }
 
 /** Uploaded footage that could not be lined up with the song. Used as cutaways. */
@@ -375,6 +377,24 @@ export interface PlanIdea {
 
 export type Framing = 'wide' | 'medium' | 'close';
 
+/** How the artist is placed in the shot: on their feet, seated, hanging on to something, or leaning on something. */
+export type Pose = 'stand' | 'sit' | 'hang' | 'lean';
+
+/** Where the camera sits against the artist: below for power, level, or above looking down. */
+export type ShotAngle = 'low' | 'level' | 'high';
+
+/** What someone filming does during the scene. A phone on a stand stays still; the editor adds the moves. */
+export type CameraMove = 'still' | 'push' | 'pull' | 'arc' | 'sway';
+
+/** A scene's shot, picked on purpose by the director or the artist. The rest of the set guide follows from it. */
+export interface ShotCall {
+  framing: Framing;
+  angle?: ShotAngle;
+  by: 'director' | 'artist';
+  /** The director's reason, one sentence the artist reads on set. */
+  why?: string;
+}
+
 /**
  * The set guide for one scene: where the artist stands, where the phone goes, how high, which lens.
  * Distances in meters on the floor plan; the artist's mark is the origin and the camera looks along -z.
@@ -382,6 +402,18 @@ export type Framing = 'wide' | 'medium' | 'close';
 export interface SetGuide {
   scene: number;
   framing: Framing;
+  pose: Pose;
+  angle: ShotAngle;
+  /** For someone filming. Propped up, the phone stays still. */
+  move: CameraMove;
+  /** Why this shot, in the director's words. */
+  why: string;
+  /** Who picked the shot: the director's read of the scene, or the artist. */
+  by: 'director' | 'artist';
+  /** The part of the artist in shot, in meters from the floor. */
+  frame: [number, number];
+  /** The lens button to tap: 1 is the main camera, 1.5 and 2 are zoom. */
+  zoom: number;
   /** Phone position relative to the artist's mark. */
   camera: { x: number; z: number; height: number };
   /** Equivalent focal length, 24 is the phone's main camera at 1x. */
@@ -396,7 +428,7 @@ export interface SetGuide {
   props?: Prop[];
 }
 
-export type PropKind = 'bar' | 'stand' | 'seat' | 'wall' | 'table' | 'steps';
+export type PropKind = 'bar' | 'stand' | 'mic' | 'seat' | 'wall' | 'table' | 'steps';
 
 export interface Prop {
   kind: PropKind;
@@ -511,6 +543,8 @@ export interface Project {
   cameraLook?: CameraLookId;
   /** One set guide per scene, in scene order. Made when the plan locks. */
   guides?: SetGuide[];
+  /** Shots picked on purpose, by section id: the director's calls in the plan and the artist's changes. */
+  shotCalls?: Record<string, ShotCall>;
   /** Scenes the artist is happy with, by scene number. */
   sceneLocks?: Record<number, boolean>;
   /** Every image this project generated. */

@@ -63,7 +63,7 @@ const SNIPPETS = [15, 30, 45, 60];
  * 2. What the song is about and its message, in your words. Explicit is fine.
  * 3. Must-haves, your references and, on "Work with my vision", the vision itself.
  * 4. The camera, so the backgrounds get made to match it.
- * Then the director reads the lyrics and all of that, and writes the shot list.
+ * Then the director reads all of that (and the lyrics, when the song has them), writes the shot list and calls every scene's shot.
  */
 export function PlanBrief({
   project,
@@ -462,9 +462,7 @@ export function PlanBrief({
             onPress={finish}
           />
           <T v="caption" c="ash" style={styles.center}>
-            {
-              "I read your lyrics and everything you said, then plan every scene. Next you'll see the backgrounds and lock each one."
-            }
+            {`${song?.lyrics.length ? "I read your lyrics and everything you said" : "I go by everything you said and where the song hits hardest"}, then plan every scene and call its shot. Next you'll see the backgrounds and lock each one.`}
           </T>
         </View>
       ) : null}

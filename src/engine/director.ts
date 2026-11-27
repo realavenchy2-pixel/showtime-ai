@@ -88,7 +88,7 @@ export function stageIntro(p: Project, id: StageId): { text: string; attachment?
     case 'shoot':
       return {
         text: p.guides?.length
-          ? 'Your move. Shoot one scene at a time with its set guide, as many takes as you want. Lock a scene when you have it; my editor picks the best take.'
+          ? 'Your move. Shoot one scene at a time with its set guide and lock it when you have it. Shoot a scene at two framings and my editor cuts between them.'
           : p.length
           ? 'Your move. Pick where you start in the recorder; the video starts there. One full pass is enough, and every extra take is another angle I can cut to. Already shot it? Upload your clips.'
           : 'Your move. Record with the song playing, or upload clips you already shot. One full pass is enough to start; every extra take is another angle I can cut to.',

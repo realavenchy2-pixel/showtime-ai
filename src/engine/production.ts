@@ -1,5 +1,13 @@
 import { cameraLook } from "./cameraLooks";
 import { locationPreset, locationTitle } from "./samples";
+import {
+  buildGuide,
+  callShot,
+  FRAMING_NAME,
+  sceneEnergy,
+  zoomLabel,
+  type SceneRead,
+} from "./shots";
 import type {
   Autonomy,
   CameraLookId,
@@ -9,14 +17,17 @@ import type {
   LocationKind,
   Look,
   PlanIdea,
-  Prop,
   Project,
   RefImage,
   Section,
   SetGuide,
+  ShotAngle,
+  ShotCall,
   Song,
   Take,
 } from "./types";
+
+export { propsFor } from "./shots";
 
 // The production side of the plan: how the artist wants to work, the directions pitched for the
 // video, the empty locations generated before the shoot, the set guide for every scene, shooting
@@ -364,11 +375,6 @@ export function applyMustHaves(p: Project): Project {
   return { ...p, looks };
 }
 
-/** "2.0 m (6.6 ft)": the guide speaks both, most artists think in feet. */
-function len(m: number): string {
-  return `${m.toFixed(1)} m (${(m * 3.281).toFixed(1)} ft)`;
-}
-
 // ---------- The part of the song ----------
 
 /** The loudest stretch of the song of about `seconds`, from the waveform: usually the hook. */
@@ -402,16 +408,10 @@ export interface ShotListItem {
 }
 
 export function shotList(p: Project): ShotListItem[] {
-  const lines = p.song?.lyrics ?? [];
   return scenesOf(p).map((scene) => {
-    const words = lines
-      .flatMap((l) => l.words)
-      .filter((w) => w.t >= scene.section.start && w.t < scene.section.end)
-      .map((w) => w.text)
-      .join(" ");
     return {
       scene,
-      lyrics: words,
+      lyrics: wordsIn(p.song, scene.section),
       where: scene.look?.prompt ?? "",
       guide: p.guides?.[scene.index],
     };
@@ -471,7 +471,7 @@ export function locationPrompt(look: Look, guide?: SetGuide, style = ""): string
     .replace(/The camera stays with the performer\.?/i, "")
     .trim();
   const framing = guide
-    ? ` ${guide.framing === "wide" ? "Wide shot" : guide.framing === "medium" ? "Medium shot" : "Close shot"} at ${guide.camera.height.toFixed(1)} m camera height, ${guide.lensMm}mm lens.`
+    ? ` ${guide.framing === "wide" ? "Wide shot" : guide.framing === "medium" ? "Medium shot" : "Close shot"}${guide.angle === "low" ? " from a low angle" : guide.angle === "high" ? " from a high angle" : ""} at ${guide.camera.height.toFixed(1)} m camera height, ${guide.lensMm}mm lens.`
     : "";
   const styled = style ? ` ${style}` : "";
   return `${clean} Empty, nobody in the frame: leave clear space in the center where the artist will stand.${framing}${styled} Natural color, no heavy grade. Photoreal, 16:9, sharp, high detail.`;
@@ -788,132 +788,140 @@ export const REF_QUALITY_NOTE =
 
 // ---------- Set guides ----------
 
-const FRAMINGS: Framing[] = ["wide", "medium", "close"];
-
-/** Where the phone goes for each framing: distance from the artist, height, lens. */
-const RIG: Record<
-  Framing,
-  { distance: number; height: number; lensMm: number; backroomM: number }
-> = {
-  wide: { distance: 3.2, height: 1.2, lensMm: 24, backroomM: 1.5 },
-  medium: { distance: 2.0, height: 1.45, lensMm: 35, backroomM: 1.2 },
-  close: { distance: 1.1, height: 1.55, lensMm: 50, backroomM: 1.0 },
-};
-
-/**
- * What the scene needs you to hold, lean on or sit in, and what to use at home instead.
- * SwitchX keeps your body exactly as shot, so the pose has to be real: hang from something,
- * grip something, sit on something.
- */
-const PROP_RULES: { test: RegExp; prop: Omit<Prop, "for">; for: string }[] = [
-  {
-    test: /\b(helicopter|chopper|plane|airplane|jet|hanging|hang off|hang from|rope|ladder|monkey bars?|pull-?up)\b/,
-    for: "the grab handle",
-    prop: {
-      kind: "bar",
-      say: "Hang on to something at head height: a door frame, a pull-up bar, or a broom laid across two chairs. Grip it the way you would in the scene.",
-    },
-  },
-  {
-    test: /\b(mic stand|microphone stand|mic\b|microphone)\b/,
-    for: "the mic stand",
-    prop: {
-      kind: "stand",
-      say: "Prop a broom or mop upright where the mic stand goes and hold it like one. Mouth height for the mic.",
-    },
-  },
-  {
-    test: /\b(car|driving|driver|passenger|truck|jeep|lambo|lamborghini|ferrari|motorcycle|bike|scooter|boat|yacht)\b/,
-    for: "the seat",
-    prop: {
-      kind: "seat",
-      say: "Sit on a chair or stool at car-seat height. Hands where the wheel or handlebars would be.",
-    },
-  },
-  {
-    test: /\b(throne|couch|sofa|bed|chair|bench|sitting|seated)\b/,
-    for: "the seat",
-    prop: {
-      kind: "seat",
-      say: "Sit on a chair or the edge of a bed. Same height the seat has in the scene.",
-    },
-  },
-  {
-    test: /\b(lean|leaning|against the wall|on the wall|railing|rail|balcony|fence)\b/,
-    for: "what you lean on",
-    prop: {
-      kind: "wall",
-      say: "Lean on a wall or the back of a chair at hip height, the way you would on the railing.",
-    },
-  },
-  {
-    test: /\b(table|desk|counter|bar top|dj booth|booth|pool table)\b/,
-    for: "the table",
-    prop: {
-      kind: "table",
-      say: "Use a table or counter at the same height. Put your hands where they would rest in the scene.",
-    },
-  },
-  {
-    test: /\b(stairs|steps|stoop|staircase)\b/,
-    for: "the steps",
-    prop: {
-      kind: "steps",
-      say: "Sit or stand on a step or a sturdy box so your height matches the stairs.",
-    },
-  },
-];
-
-export function propsFor(text: string): Prop[] {
-  const lower = ` ${text.toLowerCase()} `;
-  const out: Prop[] = [];
-  for (const rule of PROP_RULES) {
-    if (rule.test.test(lower) && !out.some((p) => p.kind === rule.prop.kind))
-      out.push({ ...rule.prop, for: rule.for });
-  }
-  return out.slice(0, 2);
+/** The words sung in a part of the song, if the song has lyrics. */
+export function wordsIn(song: Song | undefined, part: { start: number; end: number }): string {
+  return (song?.lyrics ?? [])
+    .flatMap((l) => l.words)
+    .filter((w) => w.t >= part.start && w.t < part.end)
+    .map((w) => w.text)
+    .join(" ");
 }
 
-/** The guide for one scene. Hooks go low and wide; verses move in. */
-export function guideFor(scene: Scene): SetGuide {
-  const hook = scene.section.kind === "hook";
-  const framing: Framing = hook
-    ? "wide"
-    : FRAMINGS[(scene.index + 1) % FRAMINGS.length];
-  const rig = RIG[framing];
-  const height = hook ? 0.6 : rig.height;
-  const side = scene.index % 2 === 0 ? 0 : scene.index % 4 === 1 ? 0.6 : -0.6;
-  const light: SetGuide["light"] = hook
-    ? "behind camera"
-    : scene.index % 2 === 0
-      ? "left"
-      : "right";
-  const props = propsFor(`${scene.look?.prompt ?? ""}`);
-  const steps = [
-    `Find a clear space: a plain wall, nothing busy behind you, and ${len(rig.backroomM + 1)} to move.`,
-    ...props.map((pr) => `For ${pr.for}: ${pr.say}`),
-    `Stand on your mark with at least ${len(rig.backroomM)} of clear space behind you. Plain walls switch cleanest.`,
-    `Propped up: phone on a tripod or books, ${len(rig.distance)} away${side ? `, a step to the ${side > 0 ? "right" : "left"}` : ", straight on"}, at ${height < 1 ? "knee" : height < 1.5 ? "chest" : "eye"} height (${len(height)}). Stay on your mark; the editor adds the zoom-ins and the handheld feel.`,
-    `Someone filming: same spot and height, phone held in both hands. They can drift and push in a little with you for the real handheld feel, but keep you in frame and don't walk past your mark.`,
-    `${framing === "wide" ? "Head to toe in frame" : framing === "medium" ? "Waist up in frame" : "Chest up in frame"}, ${rig.lensMm === 24 ? "1x lens" : rig.lensMm === 35 ? "1.5x zoom" : "2x zoom"}. Leave a little room around you, so the editor can punch in on the beat.`,
-    light === "behind camera"
-      ? "Main light behind the phone, pointing at you."
-      : `Main light on your ${light}, so the background stays clean.`,
-  ];
+/**
+ * What the director reads in one scene to call its shot: what happens in it, its lyrics, what the
+ * song is about, how hard the song hits there, and the shots already called before it.
+ */
+export function readScene(
+  p: Project | undefined,
+  scene: Scene,
+  before: Framing[] = [],
+): SceneRead {
+  const prompt = scene.look?.prompt ?? "";
+  // The plan adds the artist's mood to every scene; it reads like what the song is about, not like this scene.
+  const cut = prompt.indexOf(" Mood: ");
+  const plan = cut >= 0 ? prompt.slice(0, cut) : prompt;
+  const mood = cut >= 0 ? prompt.slice(cut + 7) : "";
+  const kind = scene.section.scene ? undefined : scene.section.kind;
+  if (!p?.song) {
+    return { index: scene.index, count: scene.index + 1, kind, plan, words: "", about: mood, tempo: "mid", before };
+  }
+  const song = p.song;
+  const range = rangeOf(p);
+  const scenes = scenesOf(p);
+  const energyOf = (sc: Scene) => sceneEnergy(song.peaks, song.durationSec, range, sc.section);
+  const energy = energyOf(scene);
+  const peak =
+    energy !== undefined &&
+    scenes.length > 1 &&
+    scenes.every((sc) => sc.index === scene.index || (energyOf(sc) ?? 0) < energy);
   return {
-    scene: scene.index,
-    framing,
-    camera: { x: side, z: rig.distance, height },
-    lensMm: rig.lensMm,
-    backroomM: rig.backroomM,
-    light,
-    steps,
-    props,
+    index: scene.index,
+    count: scenes.length,
+    kind,
+    plan,
+    words: wordsIn(song, scene.section),
+    about: [p.songAbout, p.songMessage, mood].filter((x) => x?.trim()).join(". "),
+    energy,
+    peak,
+    tempo: tempoBand(song),
+    vibe: p.vibe,
+    before,
   };
 }
 
+/**
+ * The set guide for one scene: the director calls the shot (or keeps the one picked on purpose),
+ * and everything else follows from it: where to stand, where the phone goes, how high, which zoom.
+ */
+export function guideFor(
+  scene: Scene,
+  p?: Project,
+  before: Framing[] = [],
+): SetGuide {
+  const pick = callShot(readScene(p, scene, before), p?.shotCalls?.[scene.section.id]);
+  // Wides stay straight on; tighter shots sit a half step off center, sides alternating.
+  const side = pick.framing === "wide" ? 0 : scene.index % 2 === 0 ? 0.4 : -0.4;
+  const light: SetGuide["light"] =
+    pick.framing === "wide" && pick.angle === "low"
+      ? "behind camera"
+      : scene.index % 2 === 0
+        ? "left"
+        : "right";
+  return buildGuide(scene.index, pick, { side, light });
+}
+
 export function makeGuides(p: Project): Project {
-  return { ...p, guides: scenesOf(p).map(guideFor) };
+  const guides: SetGuide[] = [];
+  for (const scene of scenesOf(p))
+    guides.push(guideFor(scene, p, guides.map((g) => g.framing)));
+  return { ...p, guides };
+}
+
+/**
+ * A scene's shot can change until the scene is locked or the shoot is wrapped. A scene that already
+ * has takes can change too: shot again at another framing, it gives the editor coverage.
+ */
+export function canChangeShot(p: Project, sceneIndex: number): boolean {
+  return !!scenesOf(p)[sceneIndex] && !p.shootLocked && !isSceneLocked(p, sceneIndex);
+}
+
+/**
+ * Picks a scene's shot on purpose: the director in the plan, or the artist. Before the plan locks
+ * it waits for the set guides; after, the scene's guide is made again around it.
+ */
+export function setSceneShot(
+  p: Project,
+  sceneIndex: number,
+  framing: Framing,
+  opts: { by?: "director" | "artist"; angle?: ShotAngle; why?: string } = {},
+): Project {
+  const scene = scenesOf(p)[sceneIndex];
+  if (!scene || !canChangeShot(p, sceneIndex)) return p;
+  const why = opts.why?.trim().slice(0, 200);
+  const now = p.guides?.[sceneIndex] ?? p.shotCalls?.[scene.section.id];
+  if (now?.framing === framing && (!opts.angle || now.angle === opts.angle) && !why) return p;
+  const call: ShotCall = {
+    framing,
+    by: opts.by ?? "artist",
+    ...(opts.angle ? { angle: opts.angle } : {}),
+    ...(why ? { why } : {}),
+  };
+  const next: Project = {
+    ...p,
+    shotCalls: { ...(p.shotCalls ?? {}), [scene.section.id]: call },
+  };
+  if (!p.guides?.length) return next;
+  const guides = p.guides.slice();
+  guides[sceneIndex] = guideFor(
+    scene,
+    next,
+    guides.slice(0, sceneIndex).map((g) => g.framing),
+  );
+  return { ...next, guides };
+}
+
+/** The recorder's label for a scene: "Scene 2 · Rooftop · take 3 · Close-up 2x". */
+export function recordLabel(p: Project, sceneIndex: number): string | undefined {
+  const scene = scenesOf(p)[sceneIndex];
+  if (!scene) return undefined;
+  const guide = p.guides?.[sceneIndex];
+  return [
+    sceneName(scene),
+    `take ${takesFor(p, sceneIndex).length + 1}`,
+    guide ? `${FRAMING_NAME[guide.framing]} ${zoomLabel(guide)}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** Everything the shoot needs, made when the plan locks: a set guide and an empty location for every scene. */
@@ -960,15 +968,37 @@ export function nextScene(p: Project): Scene | undefined {
  * director, and the latest when they tie (artists get better as they go).
  */
 export function bestTake(p: Project, sceneIndex: number): Take | undefined {
+  return rankTakes(p, sceneIndex)[0];
+}
+
+/** A scene's takes, the AI editor's favorite first. */
+function rankTakes(p: Project, sceneIndex: number): Take[] {
   const scene = scenesOf(p)[sceneIndex];
   const takes = takesFor(p, sceneIndex);
-  if (!scene || takes.length === 0) return undefined;
+  if (!scene || takes.length === 0) return [];
   const { start, end } = scene.section;
   const cover = (t: Take) =>
     Math.max(0, Math.min(end, t.end) - Math.max(start, t.start)) /
     Math.max(0.001, end - start);
   const score = (t: Take) => cover(t) * 100 - (t.flag ? 30 : 0) + t.n * 0.01;
-  return takes.slice().sort((a, b) => score(b) - score(a))[0];
+  return takes.slice().sort((a, b) => score(b) - score(a));
+}
+
+/**
+ * The takes that carry a scene in the cut: the AI editor's best take and, when the scene was shot
+ * again at another framing, the best clean take of that framing too. The cut moves between them on the beat.
+ */
+export function coverageTakes(p: Project, sceneIndex: number): Take[] {
+  const ranked = rankTakes(p, sceneIndex);
+  const out: Take[] = [];
+  const seen = new Set<string>();
+  for (const take of ranked) {
+    const key = take.framing ?? "";
+    if (seen.has(key) || (out.length > 0 && take.flag)) continue;
+    seen.add(key);
+    out.push(take);
+  }
+  return out;
 }
 
 /**

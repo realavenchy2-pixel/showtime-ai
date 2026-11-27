@@ -26,6 +26,7 @@ import { Button } from '../Button';
 import { Frame } from '../Frame';
 import { Press } from '../Press';
 import { SetGuide3D } from '../SetGuide3D';
+import { ShotPicker } from '../ShotPicker';
 import { T } from '../T';
 import { showToast } from '../Toast';
 
@@ -79,6 +80,12 @@ export function LocationCard({ project, scene, lyrics, showGuide = false }: { pr
         <T v="caption" c="ash" numberOfLines={3}>
           {scene.look.prompt}
         </T>
+      ) : null}
+
+      {guide ? (
+        <View style={styles.shot}>
+          <ShotPicker project={project} scene={scene} guide={guide} />
+        </View>
       ) : null}
 
       <View style={styles.grid}>
@@ -214,4 +221,5 @@ const styles = StyleSheet.create({
   iconBtn: { width: 44, height: 44, borderRadius: radius.m, backgroundColor: color.flat, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: color.hairline },
   props: { gap: 4, padding: space.m, borderRadius: radius.m, backgroundColor: color.flat },
   guide: { gap: space.s },
+  shot: { padding: space.m, borderRadius: radius.m, backgroundColor: color.flat },
 });

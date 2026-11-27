@@ -5,7 +5,8 @@ import { StyleSheet, View } from 'react-native';
 import { Check, Lock, Sparkles, X } from '@/components/icons';
 import { removeTake } from '@/engine/actions';
 import { formatTime } from '@/engine/director';
-import { autoStills, bestTake, isSceneLocked, lockScene, locationRef, nextScene, sceneName, scenesOf, takesFor, unlockScene, type Scene } from '@/engine/production';
+import { autoStills, canChangeShot, coverageTakes, isSceneLocked, lockScene, locationRef, nextScene, sceneName, scenesOf, setSceneShot, takesFor, unlockScene, type Scene } from '@/engine/production';
+import { coverFor, FRAMING_NAME, shotTitle } from '@/engine/shots';
 import { useApp } from '@/engine/store';
 import type { Project } from '@/engine/types';
 import { haptic } from '@/lib/haptics';
@@ -16,6 +17,7 @@ import { Frame } from '../Frame';
 import { Press } from '../Press';
 import { SectionTitle } from '../Screen';
 import { SetGuide3D } from '../SetGuide3D';
+import { ShotPicker } from '../ShotPicker';
 import { T } from '../T';
 
 /**
@@ -32,7 +34,7 @@ export function SceneShoot({ project }: { project: Project }) {
       <View style={styles.explain}>
         <T v="heading">How the shoot works</T>
         <T v="caption" c="smoke">
-          1. Before each scene, the set guide shows where to stand and where to put your phone.{'\n'}2. Record that scene as many times as you want.{'\n'}3. Lock it when you&apos;re happy. The AI editor picks your best take.{'\n'}4. I screenshot your best take and match it to the location we planned. No extra steps.
+          1. Before each scene, the set guide shows the shot, where to stand and where to put your phone.{'\n'}2. Record that scene as many times as you want. Shoot it again closer or wider and the editor cuts between the two on the beat.{'\n'}3. Lock it when you&apos;re happy. The AI editor picks your best take.{'\n'}4. I screenshot your best take and match it to the location we planned. No extra steps.
         </T>
       </View>
       {scenes.map((scene) => (
@@ -74,8 +76,12 @@ function SceneBlock({ project, scene, open }: { project: Project; scene: Scene; 
   const apply = useApp((s) => s.apply);
   const takes = takesFor(project, scene.index);
   const locked = isSceneLocked(project, scene.index);
-  const best = bestTake(project, scene.index);
+  // The AI editor's best take, and the best of any other framing: the cut moves between them.
+  const carry = coverageTakes(project, scene.index);
   const guide = project.guides?.[scene.index];
+  const shotAt = [...new Set(takes.map((t) => t.framing ?? guide?.framing))].filter((f) => f !== undefined);
+  const cover = guide ? coverFor(guide) : undefined;
+  const offerCover = !!guide && !!cover && takes.length > 0 && shotAt.length === 1 && !shotAt.includes(cover) && canChangeShot(project, scene.index);
   // Scene 1 places the video in the song, so it goes first.
   const waiting = project.takes.length === 0 && scene.index > 0 && !project.partPicked;
   // The background is locked first, so you know exactly where you're going.
@@ -94,7 +100,7 @@ function SceneBlock({ project, scene, open }: { project: Project; scene: Scene; 
           <T v="label" numberOfLines={1}>
             {sceneName(scene)}
           </T>
-          <T v="caption" c="smoke">{`${formatTime(scene.section.end - scene.section.start)} · ${takes.length} ${takes.length === 1 ? 'take' : 'takes'}`}</T>
+          <T v="caption" c="smoke">{`${formatTime(scene.section.end - scene.section.start)} · ${takes.length} ${takes.length === 1 ? 'take' : 'takes'}${guide ? ` · ${shotTitle(guide)}` : ''}`}</T>
         </View>
         {locked ? (
           <View style={styles.lockedPill}>
@@ -108,7 +114,8 @@ function SceneBlock({ project, scene, open }: { project: Project; scene: Scene; 
 
       {open && guide ? (
         <>
-          <SetGuide3D guide={guide} height={220} />
+          <ShotPicker project={project} scene={scene} guide={guide} />
+          <SetGuide3D guide={guide} height={240} />
           {guide.steps.map((step, i) => (
             <T key={i} v="caption" c="smoke">{`${i + 1}. ${step}`}</T>
           ))}
@@ -122,9 +129,9 @@ function SceneBlock({ project, scene, open }: { project: Project; scene: Scene; 
           </View>
           <View style={styles.flex}>
             <T v="callout">{`Take ${takes.indexOf(t) + 1}`}</T>
-            <T v="caption" c="smoke">{`${formatTime(t.end - t.start)}${t.flag ? ` · ${t.flag}` : ''}`}</T>
+            <T v="caption" c="smoke">{`${formatTime(t.end - t.start)}${t.framing ? ` · ${FRAMING_NAME[t.framing]}` : ''}${t.flag ? ` · ${t.flag}` : ''}`}</T>
           </View>
-          {best?.id === t.id ? (
+          {carry.some((c) => c.id === t.id) ? (
             <View style={styles.bestPill}>
               <Sparkles size={12} color={color.accentText} />
               <T v="micro" c="accentText">
@@ -139,6 +146,22 @@ function SceneBlock({ project, scene, open }: { project: Project; scene: Scene; 
           ) : null}
         </View>
       ))}
+
+      {offerCover && cover ? (
+        <View style={styles.cover}>
+          <T v="caption" c="smoke">{`Shoot it again as a ${FRAMING_NAME[cover].toLowerCase()} and I'll cut between the two on the beat.`}</T>
+          <Button
+            label={`Set up a ${FRAMING_NAME[cover].toLowerCase()} take`}
+            variant="quiet"
+            onPress={() => {
+              haptic.select();
+              apply(project.id, (p) => setSceneShot(p, scene.index, cover, { by: 'artist' }));
+            }}
+          />
+        </View>
+      ) : shotAt.length > 1 ? (
+        <T v="caption" c="smoke">{`I'll cut between your ${shotAt.map((f) => FRAMING_NAME[f!].toLowerCase()).join(' and ')} on the beat.`}</T>
+      ) : null}
 
       {project.shootLocked ? null : locked ? (
         <Button label="Unlock to shoot more" variant="quiet" onPress={() => apply(project.id, (p) => unlockScene(p, scene.index))} />
@@ -184,6 +207,7 @@ const styles = StyleSheet.create({
   takeThumb: { width: 40, height: 56, borderRadius: radius.s, overflow: 'hidden', backgroundColor: color.flat },
   bestPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: space.s, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: color.accentSoft },
   actions: { flexDirection: 'row', gap: space.s },
+  cover: { gap: space.xs },
   matchRow: { flexDirection: 'row', alignItems: 'center', gap: space.s },
   matchThumb: { width: 64, height: 40, borderRadius: radius.s, overflow: 'hidden', backgroundColor: color.flat },
 });

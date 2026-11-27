@@ -9,6 +9,7 @@ import { cleanCommands, COMMAND_ENUMS, direct } from '../src/claude.mjs';
 import { createUpscale } from '../src/upscale.mjs';
 import { FX_EFFECTS, FX_PACKS } from '../../src/engine/fx';
 import { LOCATIONS } from '../../src/engine/samples';
+import { FRAMINGS, SHOT_ANGLES } from '../../src/engine/shots';
 import { STAGES } from '../../src/engine/stages';
 
 /** A fake provider: answers from a route table and remembers every call. */
@@ -341,7 +342,20 @@ describe('The director (Claude)', () => {
     const content = fetch.calls[0].body.messages[0].content;
     expect(content).toContain('locking the plan');
     expect(content).toContain('rooftop at night then a white room');
-    expect(fetch.calls[0].body.max_tokens).toBe(2048);
+    // A look and a shot for every scene: the plan gets room for both.
+    expect(content).toContain('setShot for every scene');
+    expect(fetch.calls[0].body.max_tokens).toBe(4096);
+  });
+
+  it('keeps a shot call for every scene of a long plan, and drops malformed ones', () => {
+    const plan = Array.from({ length: 9 }, (_, i) => [
+      { type: 'setLook', section: `Scene ${i + 1}`, location: 'alley' },
+      { type: 'setShot', scene: i + 1, framing: i % 2 ? 'close' : 'wide', angle: i % 2 ? 'level' : 'low', why: '  The hook hits here.  ' },
+    ]).flat();
+    const out = cleanCommands([...plan, { type: 'setShot', scene: 2, framing: 'extreme' }, { type: 'setShot', scene: 0, framing: 'wide' }, { type: 'setShot', scene: 3, framing: 'close', angle: 'sideways' }]);
+    expect(out.filter((c) => c.type === 'setShot')).toHaveLength(10);
+    expect(out[1]).toEqual({ type: 'setShot', scene: 1, framing: 'wide', angle: 'low', why: 'The hook hits here.' });
+    expect(out.at(-1)).toEqual({ type: 'setShot', scene: 3, framing: 'close' });
   });
 
   it('surfaces a Claude error', async () => {
@@ -380,6 +394,8 @@ describe('The director (Claude)', () => {
     expect([...COMMAND_ENUMS.pack].sort()).toEqual(FX_PACKS.map((p) => p.id).sort());
     expect([...COMMAND_ENUMS.effect].sort()).toEqual(FX_EFFECTS.map((e) => e.id).sort());
     expect([...COMMAND_ENUMS.stage].sort()).toEqual(STAGES.map((s) => s.id).sort());
+    expect(COMMAND_ENUMS.framing).toEqual(FRAMINGS);
+    expect(COMMAND_ENUMS.angle).toEqual(SHOT_ANGLES);
   });
 });
 

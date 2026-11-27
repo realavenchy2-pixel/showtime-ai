@@ -12,6 +12,7 @@ import { RecorderChrome, type RecorderPhase } from '@/components/record/Recorder
 import { goBack } from '@/components/Screen';
 import { T } from '@/components/T';
 import { showToast } from '@/components/Toast';
+import { recordLabel } from '@/engine/production';
 import { RECORD_FPS } from '@/engine/switchx';
 import { useApp, useProject } from '@/engine/store';
 import { addRecorded } from '@/lib/footage';
@@ -280,6 +281,7 @@ export default function RecordScreen() {
       onStop={stop}
       onFlip={granted ? () => setFacing((f) => (f === 'front' ? 'back' : 'front')) : undefined}
       onClose={() => goBack(`/project/${project.id}`)}
+      sceneLabel={sceneIndex !== undefined ? recordLabel(project, sceneIndex) : undefined}
       viewfinder={pro.viewfinder}
       status={pro.status}
       tools={pro.tools}

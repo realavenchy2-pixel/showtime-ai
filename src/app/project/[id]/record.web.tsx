@@ -9,7 +9,7 @@ import { goBack } from '@/components/Screen';
 import { T } from '@/components/T';
 import { showToast } from '@/components/Toast';
 import { CAMERA_LOOKS, cameraLook, cssFilter } from '@/engine/cameraLooks';
-import { scenesOf, sceneName, setCameraLook } from '@/engine/production';
+import { recordLabel, setCameraLook } from '@/engine/production';
 import { useApp, useProject } from '@/engine/store';
 import { playShutter } from '@/lib/shutter';
 import type { Song } from '@/engine/types';
@@ -343,7 +343,7 @@ export default function RecordScreen() {
       onStop={() => void stop()}
       onFlip={phase === 'blocked' ? undefined : () => void flip()}
       onClose={() => goBack(`/project/${project.id}`)}
-      sceneLabel={sceneIndex !== undefined && scenesOf(project)[sceneIndex] ? `${sceneName(scenesOf(project)[sceneIndex])} · take ${project.takes.filter((t) => t.scene === sceneIndex).length + 1}` : undefined}
+      sceneLabel={sceneIndex !== undefined ? recordLabel(project, sceneIndex) : undefined}
       lookLabel={cameraLook(project.cameraLook).name}
       onLook={() => {
         const i = CAMERA_LOOKS.findIndex((l) => l.id === cameraLook(project.cameraLook).id);

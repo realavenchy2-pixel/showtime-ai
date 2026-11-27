@@ -4,6 +4,7 @@ import { advance, createProject, exportCost, exportVideo, type NewProjectInput }
 import { respond, runAgent } from './agent';
 import { buildSampleProjects } from './sampleProjects';
 import type { PlanId, Project } from './types';
+import { upgradeGuide } from './shots';
 import { recordVersion } from './versions';
 
 // App state. Projects change only through the engine's pure transitions; after each one the
@@ -71,7 +72,9 @@ function seed(): Pick<AppState, 'projects' | 'order' | 'credits' | 'plan' | 'see
   const mine = (saved?.projects ?? [])
     .map((p) => (p.job?.external ? { ...p, job: undefined } : p))
     // Exported before versions existed: that export is v1.
-    .map((p) => (p.exportState.done && !p.versions?.length ? recordVersion(p, p.createdAt) : p));
+    .map((p) => (p.exportState.done && !p.versions?.length ? recordVersion(p, p.createdAt) : p))
+    // Set guides from before shot calls get a pose, an angle and a move; their framing and distances stay.
+    .map((p) => (p.guides?.length ? { ...p, guides: p.guides.map(upgradeGuide) } : p));
   const all = [...mine, ...samples];
   return {
     projects: Object.fromEntries(all.map((p) => [p.id, p])),

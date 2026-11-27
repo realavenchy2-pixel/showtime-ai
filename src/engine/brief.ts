@@ -47,7 +47,11 @@ const PLACES: [RegExp, LocationKind][] = [
 
 /** A setting the presets don't cover becomes its own scene, described in the artist's words. */
 const CUSTOM_PLACE =
-  /\b(rooftop|roof|warehouse|club|forest|woods|desert|mansion|pool|field|parking (lot|garage)|garage|subway|train|church|jungle|snow|mountain|bridge|gas station|trap house|kitchen|bedroom|living room|studio|stage|arena|court|basketball|barbershop|store|bodega|diner|motel|hotel|penthouse|yacht|boat|island|cemetery|graveyard|highway|road|car wash|projects|school|hallway)\b/;
+  /\b(rooftop|roof|warehouse|club|party|forest|woods|desert|mansion|pool|field|parking (lot|garage)|garage|subway|train|church|jungle|snow|mountain|bridge|gas station|trap house|kitchen|bedroom|living room|studio|stage|arena|court|basketball|barbershop|store|bodega|diner|motel|hotel|penthouse|yacht|boat|island|cemetery|graveyard|highway|road|car wash|projects|school|hallway)\b/;
+
+/** The artist is in it: "me in my car", "hanging off a helicopter". A cutaway thing with the artist in it is a place to perform. */
+const PERFORMER =
+  /\b(me|i|i'm|im|myself|we|we're|us)\b|\bhang(s|ing)? (off|from|out)\b|\b(driving|riding|sitting|standing|leaning|rapping|performing)\b/;
 
 /** Things that read as cutaways rather than places to perform. */
 const BROLL_THINGS =
@@ -98,6 +102,8 @@ export function planFromBrief(p: Project, input: string): Project {
     const place = PLACES.find(([re]) => re.test(lower));
     if (place) settings.push({ location: place[1], words: clause });
     else if (CUSTOM_PLACE.test(lower))
+      settings.push({ location: "custom", words: clause });
+    else if (BROLL_THINGS.test(lower) && PERFORMER.test(lower))
       settings.push({ location: "custom", words: clause });
     else if (BROLL_THINGS.test(lower)) cutaways.push(clause);
     else mood.push(clause);
@@ -180,9 +186,10 @@ function describePlan(
   for (const id of sceneIds) {
     const look = p.looks[id];
     if (!look) continue;
+    const lower = ` ${look.prompt.toLowerCase()} `;
     const place =
       look.location === "custom"
-        ? CUSTOM_PLACE.exec(` ${look.prompt.toLowerCase()} `)?.[1]
+        ? (CUSTOM_PLACE.exec(lower)?.[1] ?? BROLL_THINGS.exec(lower)?.[1])
         : undefined;
     const word =
       look.location === "custom"
