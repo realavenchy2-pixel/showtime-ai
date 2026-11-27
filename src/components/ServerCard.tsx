@@ -72,7 +72,7 @@ export function ServerCard() {
           />
           <Button label={busy ? 'Connecting' : 'Connect'} variant="secondary" onPress={() => void connect()} disabled={!url.trim()} busy={busy} />
           <T v="caption" c="ash">
-            The server holds your Beeble and Claude keys. This app never sees them.
+            The server holds the AI keys. This app never sees them.
           </T>
         </>
       )}

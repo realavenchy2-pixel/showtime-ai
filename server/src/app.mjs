@@ -2,12 +2,12 @@
 // One fetch-style handler, no dependencies, so it runs on Vercel, Cloudflare Workers, Deno or plain Node.
 //
 //   GET  /v1/health                 is the server up
-//   GET  /v1/capabilities           which SwitchX, b-roll models and director this server can run
+//   GET  /v1/capabilities           what this server can run (switch, b-roll, backgrounds, director, upscale)
 //   POST /v1/uploads                a slot to upload a shot or reference image to Beeble
 //   PUT  /v1/uploads/proxy?url=     the same upload sent through this server (when the browser can't PUT directly)
 //   POST /v1/switch                 start one SwitchX generation        GET /v1/switch/:id   where it stands
 //   POST /v1/broll                  start one b-roll clip               GET /v1/broll/:id    where it stands
-//   POST /v1/references             make a reference frame for a look
+//   POST /v1/references             paint a background for a scene (default image model; a redo goes to the backup)
 //   POST /v1/director               the director's answer plus commands (Claude)
 //   POST /v1/upscale/upload         a signed slot in fal storage for a rendered video (1440p and 4K)
 //   POST /v1/upscale                start a Topaz upscale               GET /v1/upscale/:id  where it stands
@@ -21,6 +21,28 @@ import { direct } from './claude.mjs';
 import { createUpscale } from './upscale.mjs';
 
 const RESULT_HOSTS = /(^|\.)(beeble\.ai|amazonaws\.com|googleapis\.com|googleusercontent\.com|cloudfront\.net|fal\.media|fal\.run|r2\.cloudflarestorage\.com|blob\.core\.windows\.net)$/i;
+
+// White label: the app never names the companies or models behind it, errors included.
+const NAMES = [
+  [/\bbeeble(?:\.ai)?(?:'s)?\b/gi, 'the switch'],
+  [/\bswitch\s?x(?:[\s-]*\d+(?:\.\d+)?)?\b/gi, 'the switch'],
+  [/\btopaz(?:\s+(?:proteus|starlight))?\b/gi, 'the upscaler'],
+  [/\b(?:proteus|starlight)\b/gi, 'the upscaler'],
+  [/\b(?:openai|chatgpt|gpt[\s-]?image[\w.-]*|sunburst)\b/gi, 'the image service'],
+  [/\b(?:gemini(?:[\s-]+(?:omni|\d[\w.-]*))*|nano\s+banana(?:\s+(?:pro|\d+(?:\.\d+)?))?|google)\b/gi, 'the render service'],
+  [/\bomni\b/gi, 'the render service'],
+  [/\b(?:minimax(?:\s+h3)?|h3|hailuo|seedance|kling|veo|sora)\b/gi, 'the render service'],
+  [/\bfal(?:\.ai|\.run|\.media)?\b/gi, 'the render service'],
+  [/\b(?:anthropic|claude(?:-[\w.-]+)?)\b/gi, 'the director'],
+];
+
+export function plainWords(text) {
+  let out = String(text);
+  for (const [re, word] of NAMES) out = out.replace(re, word);
+  // "OpenAI gpt-image-2.6" becomes one "the image service", not two.
+  for (const word of new Set(NAMES.map(([, w]) => w))) out = out.replace(new RegExp(`${word}(?:[\\s,/-]+${word})+`, 'gi'), word);
+  return out.replace(/\b(the)\s+the\b/gi, '$1');
+}
 
 function allowedHost(url) {
   try {
@@ -62,7 +84,8 @@ export function createApp(env, deps = {}) {
 
   function fail(request, err) {
     const status = err instanceof ProviderError ? (err.status >= 400 && err.status < 600 ? err.status : 502) : 500;
-    const message = err instanceof Error ? err.message : 'Something went wrong on the studio server.';
+    console.error('studio:', err instanceof Error ? err.message : err);
+    const message = plainWords(err instanceof Error ? err.message : 'Something went wrong on the studio server.');
     return json(request, { error: { message, code: err instanceof ProviderError ? err.code : undefined } }, status === 401 ? 502 : status);
   }
 
@@ -77,6 +100,66 @@ export function createApp(env, deps = {}) {
   function need(thing, name) {
     if (!thing) throw new ProviderError(`${name} is not set up on this server yet.`, 501, 'NOT_CONFIGURED');
     return thing;
+  }
+
+  // Backgrounds: a default image model and a backup. A redo (the artist asked for something
+  // different) goes to the backup first, for a real second opinion; either one covers for the other
+  // when it fails or isn't set up. The app never learns which one made the picture.
+  const painters = {
+    openai: env.OPENAI_API_KEY ? { model: env.OPENAI_IMAGE_MODEL || 'gpt-image-2.6-sunburst', quality: env.OPENAI_IMAGE_QUALITY || 'high' } : undefined,
+    google: env.GEMINI_API_KEY ? { model: env.GEMINI_IMAGE_MODEL || 'gemini-3-pro-image', size: env.GEMINI_IMAGE_SIZE || '2K' } : undefined,
+  };
+
+  async function paintOpenAI(prompt, aspect, signal) {
+    const cfg = painters.openai;
+    const res = await doFetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${env.OPENAI_API_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: cfg.model, prompt, size: aspect === '9:16' ? '1024x1536' : '1536x1024', quality: cfg.quality, n: 1 }),
+      signal,
+    });
+    const data = await res.json().catch(() => undefined);
+    if (!res.ok) throw new ProviderError(data?.error?.message ?? `OpenAI answered ${res.status}`, res.status);
+    const b64 = data?.data?.[0]?.b64_json;
+    if (!b64) throw new ProviderError('The image model finished without an image.', 502);
+    return { b64, mime: 'image/png' };
+  }
+
+  async function paintGoogle(prompt, aspect, signal) {
+    const cfg = painters.google;
+    // Same Interactions API the b-roll uses, asking for an image instead of a video.
+    const res = await doFetch(`https://generativelanguage.googleapis.com/v1beta/interactions?key=${encodeURIComponent(env.GEMINI_API_KEY)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: cfg.model, input: prompt, response_format: { type: 'image', aspect_ratio: aspect === '9:16' ? '9:16' : '16:9', image_size: cfg.size } }),
+      signal,
+    });
+    const data = await res.json().catch(() => undefined);
+    if (!res.ok) throw new ProviderError(data?.error?.message ?? `Gemini answered ${res.status}`, res.status);
+    const image = (data?.steps ?? []).flatMap((st) => st.content ?? []).find((c) => c.type === 'image' && c.data);
+    if (!image) throw new ProviderError('The image model finished without an image.', 502);
+    return { b64: image.data, mime: image.mime_type ?? 'image/png' };
+  }
+
+  /** Paints one background, default model first (backup first on a redo), within the request's time. */
+  async function paint(prompt, aspect, retry) {
+    const order = (retry ? ['google', 'openai'] : ['openai', 'google']).filter((name) => painters[name]);
+    if (order.length === 0) throw new ProviderError('Backgrounds are not set up on this server yet.', 501, 'NOT_CONFIGURED');
+    let last;
+    for (let i = 0; i < order.length; i++) {
+      // The first try leaves room in the request for the backup.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), i === 0 && order.length > 1 ? 150_000 : 120_000);
+      try {
+        return await (order[i] === 'openai' ? paintOpenAI : paintGoogle)(prompt, aspect, controller.signal);
+      } catch (err) {
+        last = err;
+        console.error(`references: ${order[i]} failed`, err instanceof Error ? err.message : err);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    throw last instanceof ProviderError ? last : new ProviderError('The background could not be made.', 502);
   }
 
   async function capabilities() {
@@ -94,36 +177,23 @@ export function createApp(env, deps = {}) {
       switch: sw ?? null,
       broll: broll.models(),
       director: claude ? { model: claude.model || 'claude-sonnet-5-5' } : null,
-      references: !!(env.OPENAI_API_KEY && beeble),
+      references: !!((painters.openai || painters.google) && beeble),
       upscale: upscale.looks(),
       locked: !!env.SHOWTIME_APP_KEY,
     };
   }
 
   async function makeReference(input) {
-    const b = need(beeble, 'Beeble');
-    if (!env.OPENAI_API_KEY) throw new ProviderError('Reference frames are not set up on this server yet.', 501, 'NOT_CONFIGURED');
+    const b = need(beeble, 'The switch');
     const prompt = String(input.prompt ?? '').trim().slice(0, 4000);
     if (!prompt) throw new ProviderError('A reference needs a prompt.', 400);
-    const res = await doFetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${env.OPENAI_API_KEY}`, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
-        prompt: `A cinematic still for a music video, no people in frame. ${prompt}`,
-        size: input.aspect === '9:16' ? '1024x1536' : '1536x1024',
-        n: 1,
-      }),
-    });
-    const data = await res.json().catch(() => undefined);
-    if (!res.ok) throw new ProviderError(data?.error?.message ?? `OpenAI answered ${res.status}`, res.status);
-    const b64 = data?.data?.[0]?.b64_json;
-    if (!b64) throw new ProviderError('The image model finished without an image.', 502);
+    const { b64, mime } = await paint(`A cinematic still for a music video, no people in frame. ${prompt}`, input.aspect, input.retry === true);
+    const ext = /jpe?g/.test(mime) ? 'jpg' : /webp/.test(mime) ? 'webp' : 'png';
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const slot = await b.createUpload('reference.png');
-    const put = await doFetch(slot.uploadUrl, { method: 'PUT', headers: { 'content-type': 'image/png' }, body: bytes });
+    const slot = await b.createUpload(`reference.${ext}`);
+    const put = await doFetch(slot.uploadUrl, { method: 'PUT', headers: { 'content-type': mime }, body: bytes });
     if (!put.ok) throw new ProviderError(`The reference could not be stored (${put.status}).`, 502);
-    return { uri: slot.uri, dataUrl: `data:image/png;base64,${b64}` };
+    return { uri: slot.uri, dataUrl: `data:${mime};base64,${b64}` };
   }
 
   return async function handle(request) {
@@ -146,7 +216,7 @@ export function createApp(env, deps = {}) {
       if (method === 'POST' && path === '/v1/uploads') {
         const { filename } = await body(request);
         if (typeof filename !== 'string' || !/\.(mp4|mov|png|jpe?g|webp)$/i.test(filename)) throw new ProviderError('Send a filename ending in .mp4, .mov, .png, .jpg or .webp.', 400);
-        return json(request, await need(beeble, 'Beeble').createUpload(filename.slice(-120)));
+        return json(request, await need(beeble, 'The switch').createUpload(filename.slice(-120)));
       }
 
       if (method === 'PUT' && path === '/v1/uploads/proxy') {
@@ -160,7 +230,7 @@ export function createApp(env, deps = {}) {
       if (method === 'POST' && path === '/v1/switch') {
         const input = await body(request);
         if (typeof input.sourceUri !== 'string') throw new ProviderError('A switch needs sourceUri.', 400);
-        const started = await need(beeble, 'Beeble').startSwitch({
+        const started = await need(beeble, 'The switch').startSwitch({
           sourceUri: input.sourceUri,
           prompt: typeof input.prompt === 'string' ? input.prompt : undefined,
           referenceUris: Array.isArray(input.referenceUris) ? input.referenceUris.filter((x) => typeof x === 'string') : [],
@@ -174,7 +244,7 @@ export function createApp(env, deps = {}) {
       }
 
       const sw = path.match(/^\/v1\/switch\/([^/]+)$/);
-      if (method === 'GET' && sw) return json(request, await need(beeble, 'Beeble').switchStatus(decodeURIComponent(sw[1])));
+      if (method === 'GET' && sw) return json(request, await need(beeble, 'The switch').switchStatus(decodeURIComponent(sw[1])));
 
       if (method === 'POST' && path === '/v1/broll') {
         const input = await body(request);
@@ -193,7 +263,7 @@ export function createApp(env, deps = {}) {
 
       if (method === 'POST' && path === '/v1/director') {
         const input = await body(request);
-        const answer = await direct(need(claude, 'The director (Claude)'), {
+        const answer = await direct(need(claude, 'The director'), {
           project: input.project ?? {},
           history: Array.isArray(input.history) ? input.history : [],
           text: input.text,

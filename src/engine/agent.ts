@@ -32,6 +32,7 @@ import { nextActions, STAGE_WORD } from './director';
 import { FX_EFFECTS, FX_PACKS } from './fx';
 import { routeIdea } from './ideas';
 import { scenesOf } from './production';
+import { plainWords } from './whitelabel';
 import { locationTitle, LOCATIONS } from './samples';
 import { currentStage, stageDef, stageStatus } from './stages';
 import { BROLL_CREDITS_PER_SEC, REFERENCE_CREDITS, switchCredits } from './switchx';
@@ -238,7 +239,7 @@ export function applyCommand(p: Project, cmd: AgentCommand): CommandResult {
       if (status === 'done' || status === 'skipped') {
         return { project: next, ok: true, note: `Saved to your idea inbox. ${stageDef(cmd.stage).title} is already wrapped, so tap it on the slate if you want to go back and use it.` };
       }
-      if (cmd.stage === 'switch') return { project: next, ok: true, note: "Filed for the switch. Add it to a look's prompt or drop in a reference image and SwitchX builds it in." };
+      if (cmd.stage === 'switch') return { project: next, ok: true, note: "Filed for the switch. Add it to a look's prompt or drop in a reference image and the switch builds it in." };
       return { project: next, ok: true, note: `Filed under ${STAGE_WORD[cmd.stage]}. I'll bring it back when we get there.` };
     }
   }
@@ -353,9 +354,8 @@ function smallTalk(p: Project, input: string): string {
     return 'Nothing is rendering right now.';
   }
   if (/(cost|credit|price|how much)/.test(text)) {
-    const b = estimateBudget(p);
-    const render = b.totalCredits ? ` Behind the scenes this cut is about ${b.totalCredits} Beeble credits to render at ${p.switchSettings.resolution}p.` : '';
-    return `One video is 1 credit, and 4K adds 1 more. Touch-ups after the first export are free on a plan, 1 credit without one.${render}`;
+    // What it costs the studio to render stays behind the scenes; the artist hears their own price.
+    return 'One video is 1 credit, and 4K adds 1 more. Touch-ups after the first export are free on a plan, 1 credit without one.';
   }
   if (/\b(what'?s next|what now|next step|where are we)\b/.test(text)) {
     const next = nextActions(p).primary?.label;
@@ -399,7 +399,8 @@ export function applyReply(p: Project, reply: string, commands: AgentCommand[]):
     // A touch-up says exactly what it opened and what stays; Claude's reply stays short.
     else if (TOUCH_UPS.has(cmd.type) && res.note) opened.push(res.note);
   }
-  return addDirectorMessage(next, [reply.trim(), ...opened, ...blocked].filter(Boolean).join(' '));
+  // White label backstop: the reply never names a model or company, even if Claude slips.
+  return addDirectorMessage(next, plainWords([reply.trim(), ...opened, ...blocked].filter(Boolean).join(' ')));
 }
 
 const TOUCH_UPS = new Set<AgentCommand['type']>(['reshootScene', 'newBackground', 'makeFull']);

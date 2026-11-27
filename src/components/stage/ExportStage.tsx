@@ -94,7 +94,7 @@ export function ExportStage({ project }: { project: Project }) {
             <T v="caption" c="ash" style={styles.center}>
               {blocked(state.resolution)
                 ? `${state.resolution} is upscaled on the studio server. Connect it under Account, or pick 1080p.`
-                : `${priceNote}${onDevice ? ' It renders on this device in about the length of the song per format.' : ''}${upscaling ? ' Then Topaz upscales it, a few minutes per format.' : ''}`}
+                : `${priceNote}${onDevice ? ' It renders on this device in about the length of the song per format.' : ''}${upscaling ? ' Then it gets upscaled, a few minutes per format.' : ''}`}
             </T>
           </>
         )
@@ -144,7 +144,7 @@ export function ExportStage({ project }: { project: Project }) {
 
           <View style={stageStyles.block}>
             <SectionTitle
-              detail={`${phoneSize ? 'This phone renders up to 720p.' : '720p and 1080p render here.'} ${canUpscale ? 'Topaz upscales 1440p and 4K on the studio server.' : '1440p and 4K are upscaled on the studio server, once you connect it under Account.'} Always 24 fps.`}>
+              detail={`${phoneSize ? 'This phone renders up to 720p.' : '720p and 1080p render here.'} ${canUpscale ? '1440p and 4K get upscaled after the render.' : '1440p and 4K are upscaled on the studio server, once you connect it under Account.'} Always 24 fps.`}>
               How sharp
             </SectionTitle>
             <Chips<Resolution>
@@ -163,15 +163,15 @@ export function ExportStage({ project }: { project: Project }) {
 
           {upscaling ? (
             <View style={stageStyles.block}>
-              <SectionTitle detail="Topaz runs on the studio server after the render here. Both keep your timing and sound.">Upscaler</SectionTitle>
+              <SectionTitle detail="The upscale runs after the render here. Both keep your timing and sound.">Upscaler</SectionTitle>
               <Chips<UpscaleLook>
                 label="Upscaler"
                 value={state.upscaler ?? 'clean'}
                 disabled={!editable}
                 onChange={(look) => apply(project.id, (p) => setUpscaler(p, look))}
                 options={[
-                  { value: 'clean', label: 'Clean', detail: 'Topaz Proteus, true to your footage', disabled: !looks.includes('clean') },
-                  { value: 'detail', label: 'Max detail', detail: `Topaz Starlight${detailExtra > 0 ? `, ${plusCredits(detailExtra)}` : ''}`, disabled: !looks.includes('detail') },
+                  { value: 'clean', label: 'Clean', detail: 'True to your footage', disabled: !looks.includes('clean') },
+                  { value: 'detail', label: 'Max detail', detail: `Rebuilds fine detail${detailExtra > 0 ? `, ${plusCredits(detailExtra)}` : ''}`, disabled: !looks.includes('detail') },
                 ]}
               />
             </View>

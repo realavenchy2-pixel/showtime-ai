@@ -2,15 +2,14 @@ import { useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { Plus } from '@/components/icons';
-import { addBrollIdea, approveBroll, brollToMake, generateBroll, setBrollModel, skipStage } from '@/engine/actions';
+import { addBrollIdea, approveBroll, brollToMake, generateBroll, skipStage } from '@/engine/actions';
 import { stageStatus } from '@/engine/stages';
 import { useApp } from '@/engine/store';
-import type { BrollModel, Project } from '@/engine/types';
+import type { Project } from '@/engine/types';
 import { haptic } from '@/lib/haptics';
 import { color, radius, space, type } from '@/theme/tokens';
 
 import { Button } from '../Button';
-import { Chips } from '../Chips';
 import { PlayerView } from '../player/PlayerView';
 import { Press } from '../Press';
 import { SectionTitle } from '../Screen';
@@ -30,7 +29,6 @@ export function BrollStage({ project }: { project: Project }) {
   const toMake = brollToMake(project);
   const own = ideas.some((i) => i.keep && i.clipId && i.status === 'idea');
   const back = ideas.some((i) => i.status === 'clip');
-  const model = ideas.find((i) => i.status === 'idea')?.model ?? ideas[0]?.model ?? 'omni';
   const current = status === 'current' || status === 'needs_you';
 
   const add = () => {
@@ -107,16 +105,6 @@ export function BrollStage({ project }: { project: Project }) {
               <Plus size={20} color={color.stage} />
             </Press>
           </View>
-          <Chips<BrollModel>
-            label="B-roll model"
-            value={model}
-            disabled={working}
-            onChange={(m) => apply(project.id, (p) => setBrollModel(p, m))}
-            options={[
-              { value: 'omni', label: 'Gemini Omni', detail: 'Sharper, 3 credits a second' },
-              { value: 'h3', label: 'MiniMax H3', detail: 'Faster, 2 credits a second' },
-            ]}
-          />
         </View>
       ) : null}
     </StageScreen>

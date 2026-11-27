@@ -127,7 +127,7 @@ describe('versions', () => {
     const fell = upscaleFailed(running, '1080p', 'Topaz timed out.', 1);
     expect(fell.exportState.resolution).toBe('1080p');
     expect(fell.exportState.creditsCharged).toBe(1);
-    expect(fell.messages.at(-1)?.text).toBe("The 4K upscale didn't finish (Topaz timed out). You have it in 1080p and the upscale credit is back.");
+    expect(fell.messages.at(-1)?.text).toBe("The 4K upscale didn't finish (the upscaler timed out). You have it in 1080p and the upscale credit is back.");
     const done = finishJob(fell);
     expect(latestVersion(done)?.resolution).toBe('1080p');
     // Only a running export can fall back.

@@ -420,8 +420,49 @@ export function shotList(p: Project): ShotListItem[] {
 
 // ---------- Locations, generated before the shoot ----------
 
+// ---------- The look every background shares ----------
+
+const VIBE_MOOD: Record<string, string> = {
+  Drill: "cold, gritty street energy with hard shadows",
+  Trap: "flashy, high-energy, neon and luxury",
+  Melodic: "dreamy and emotional, soft glowing light",
+  "Boom bap": "classic golden-era feel, warm and textured",
+  Dark: "moody and low-key, deep shadows",
+};
+
+/** Themes from the artist's own words, as mood words an image model can paint. Never their words themselves. */
+const THEMES: [RegExp, string][] = [
+  [/\b(money|rich|bands?|cash|racks?|bag|paid|millions?|luxury|bentley|lambo|rolex|drip)\b/, "luxury and money"],
+  [/\b(love|girl|heart|baby|her|romance|miss you)\b/, "intimate and romantic"],
+  [/\b(struggle|pain|grind|broke|hustle|came up|come up|from nothing|trenches|block|streets?)\b/, "hungry come-up energy, gritty"],
+  [/\b(party|club|turn up|lit|dance|celebrate|vibe)\b/, "party energy, lights and motion"],
+  [/\b(lost|grief|rip|died|gone|miss|tears|sad)\b/, "somber and reflective"],
+  [/\b(god|faith|pray|blessed|heaven|church)\b/, "hopeful, light breaking through"],
+  [/\b(won|win|winning|made it|top|boss|king|queen|champion|legend)\b/, "triumphant, larger than life"],
+  [/\b(enemies|opps|war|revenge|haters?|smoke)\b/, "tense and confrontational"],
+];
+
+/** The mood of the song for its backgrounds: its vibe and up to two themes from what the artist said it's about. */
+export function songMood(p: Project): string {
+  const said = `${p.songAbout ?? ""} ${p.songMessage ?? ""}`.toLowerCase();
+  const themes = THEMES.filter(([re]) => re.test(said)).map(([, mood]) => mood).slice(0, 2);
+  const vibe = p.vibe ? VIBE_MOOD[p.vibe] : undefined;
+  return [vibe, ...themes].filter(Boolean).join("; ");
+}
+
+/**
+ * What every background in a video shares: the camera the artist picked (how it sees light, lens and
+ * texture) and the mood of the song. Added to every generated background, so the scenes match each
+ * other and the camera look the video is graded with.
+ */
+export function backgroundStyle(p: Project): string {
+  const camera = cameraLook(p.cameraLook).prompt;
+  const mood = songMood(p);
+  return [camera, mood ? `Mood: ${mood}.` : ""].filter(Boolean).join(" ");
+}
+
 /** The prompt for the empty location: the scene's world with nobody in it, framed for where the artist will stand. */
-export function locationPrompt(look: Look, guide?: SetGuide): string {
+export function locationPrompt(look: Look, guide?: SetGuide, style = ""): string {
   const base =
     look.location === "custom"
       ? look.prompt
@@ -432,7 +473,8 @@ export function locationPrompt(look: Look, guide?: SetGuide): string {
   const framing = guide
     ? ` ${guide.framing === "wide" ? "Wide shot" : guide.framing === "medium" ? "Medium shot" : "Close shot"} at ${guide.camera.height.toFixed(1)} m camera height, ${guide.lensMm}mm lens.`
     : "";
-  return `${clean} Empty, nobody in the frame: leave clear space in the center where the artist will stand.${framing} Photoreal, 16:9, sharp, high detail.`;
+  const styled = style ? ` ${style}` : "";
+  return `${clean} Empty, nobody in the frame: leave clear space in the center where the artist will stand.${framing}${styled} Natural color, no heavy grade. Photoreal, 16:9, sharp, high detail.`;
 }
 
 const MAX_OPTIONS = 4;
@@ -445,15 +487,17 @@ export function optionCount(p: Project): number {
   );
 }
 
+/** `retry`: the artist didn't like the last set, so the server makes these with its backup model. */
 function makeOptions(
   p: Project,
   scene: Scene,
   look: Look,
   count: number,
   note?: string,
+  retry = false,
 ): RefImage[] {
   const guide = p.guides?.[scene.index];
-  const base = locationPrompt(look, guide);
+  const base = locationPrompt(look, guide, backgroundStyle(p));
   return Array.from({ length: count }, (_, i) => ({
     id: uid("ref"),
     label: `${sceneName(scene)}, option ${i + 1}`,
@@ -462,6 +506,7 @@ function makeOptions(
     prompt: note
       ? `${base} Change: ${note.trim().slice(0, 300)}`
       : `${base}${i > 0 ? ` Variation ${i + 1}: a different angle and light on the same place.` : ""}`,
+    ...(retry ? { retry: true } : {}),
   }));
 }
 
@@ -543,7 +588,7 @@ export function reviseLocation(
 ): Project {
   const scene = scenesOf(p)[sceneIndex];
   if (!scene?.look || scene.look.locationLocked || p.shots.length > 0) return p;
-  const options = makeOptions(p, scene, scene.look, optionCount(p), note);
+  const options = makeOptions(p, scene, scene.look, optionCount(p), note, true);
   const next = updateScene(p, sceneIndex, (look) => ({
     ...withPicked(look, options[0], p.switchSettings.maxRefs),
     options,

@@ -3,6 +3,7 @@ import { formatTime, jobResult, stageIntro, takeLine } from './director';
 import { emptyEffects, planForPack, planFromCopied } from './fx';
 import {
   barSec,
+  BROLL_MODEL,
   DEFAULT_TAKE_PLAN,
   lookFor,
   pitchBroll,
@@ -12,6 +13,7 @@ import {
 import { bestTake, pitchIdeas, prepareShoot, scenesOf, setPath } from './production';
 import { canSkip, currentStage, STAGE_BY_ID, STAGES } from './stages';
 import { recordVersion } from './versions';
+import { plainWords } from './whitelabel';
 import { HANDLE_SEC, maxShotSec, RECORD_FPS, SWITCHX } from './switchx';
 import type {
   Autonomy,
@@ -343,11 +345,6 @@ export function setPipeline(p: Project, pipeline: Project['pipeline']): Project 
   return post({ ...p, pipeline, live: pipeline === 'live' ? p.live : undefined }, 'system', pipeline === 'live' ? LIVE_NOTE : DEMO_NOTE);
 }
 
-export function switchName(model: string): string {
-  const version = model.match(/(\d+\.\d+)/)?.[1];
-  return version ? `SwitchX ${version}` : 'SwitchX';
-}
-
 /**
  * Points the project at the studio server and adopts its limits: shot length and reference count
  * follow whichever SwitchX the key can run. Only before any shot has been switched.
@@ -364,9 +361,10 @@ export function connectLive(p: Project, caps: LiveCaps): Project {
   const broll = model ? { ...p.broll, ideas: p.broll.ideas.map((i) => ({ ...i, model })) } : p.broll;
   const next: Project = { ...p, pipeline: 'live', live: caps, switchSettings: settings, looks, broll };
   const secs = Math.floor(caps.maxFrames / RECORD_FPS);
-  const parts = [`Live: the switch runs on ${switchName(caps.model)}, up to ${secs} seconds a shot.`];
+  // White label: the artist hears what's on, never whose model it is.
+  const parts = [`Live: the switch is on, up to ${secs} seconds a shot.`];
   if (caps.broll.length === 0) parts.push('B-roll is not set up on the server yet.');
-  if (caps.director) parts.push('Claude is directing.');
+  if (caps.director) parts.push('The AI director is on.');
   return post(next, 'system', parts.join(' '));
 }
 
@@ -486,7 +484,7 @@ export function addClip(p: Project, input: Omit<Clip, 'id'>): Project {
     status: 'idea',
     keep: true,
     mine: true,
-    model: p.broll.ideas[0]?.model ?? 'omni',
+    model: BROLL_MODEL,
   };
   let next: Project = { ...p, clips: [...p.clips, clip], broll: p.broll.approved ? p.broll : { ...p.broll, ideas: [...p.broll.ideas, idea] } };
   next = arrangeBroll(next, idea.id);
@@ -869,7 +867,7 @@ export function addBrollIdea(p: Project, shot: string, fromInbox = false): Proje
     keep: true,
     fromInbox: fromInbox || undefined,
     mine: true,
-    model: p.broll.ideas[0]?.model ?? 'omni',
+    model: BROLL_MODEL,
   };
   // The artist's idea gets a place; a director pitch gives way if the video is full.
   return arrangeBroll({ ...p, broll: { ...p.broll, ideas: [...p.broll.ideas, idea] } }, idea.id);
@@ -1009,7 +1007,7 @@ export function upscaleFailed(p: Project, delivered: Resolution, reason: string,
   const smaller = deliverAt(p, delivered);
   const next: Project = { ...smaller, exportState: { ...smaller.exportState, creditsCharged: Math.max(0, p.exportState.creditsCharged - refund) } };
   const back = refund > 0 ? ` and the ${refund === 1 ? 'upscale credit is' : `${refund} upscale credits are`} back` : '';
-  const why = reason.trim().replace(/\.+$/, '');
+  const why = plainWords(reason).trim().replace(/\.+$/, '');
   return post(next, 'director', `The ${wanted} upscale didn't finish (${why}). You have it in ${delivered}${back}.`, { stage: 'export' });
 }
 
@@ -1167,8 +1165,10 @@ export function finishJob(p: Project): Project {
 }
 
 /** Stops the running job without results, with a line from the director about what went wrong. */
-export function failJob(p: Project, reason: string): Project {
+export function failJob(p: Project, why: string): Project {
   if (!p.job) return p;
+  // A provider's own error can name it; the artist only hears what happened.
+  const reason = plainWords(why);
   const stage = p.job.stage;
   let next: Project = { ...p, job: undefined };
   if (stage === 'switch') next = { ...next, shots: next.shots.map((s) => (s.status === 'queued' || s.status === 'rendering' ? { ...s, status: 'failed' as const, error: reason } : s)) };

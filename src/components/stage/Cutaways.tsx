@@ -38,8 +38,8 @@ function note(p: Project, idea: BrollIdea): string {
   if (idea.at === undefined) return 'Waiting for a spot';
   const at = formatTime(idea.at - r.start);
   if (idea.cover) return `${at} to ${formatTime(idea.at + idea.durationSec - r.start)}. Covers where no take reaches, so it stays.`;
-  const source = idea.clipId ? 'your clip, free' : idea.model === 'omni' ? 'Gemini Omni' : 'MiniMax H3';
-  return `${at}, ${secs}, ${source}. ${STATE[idea.status]}.`;
+  // Which model makes the clip is never shown; the artist only needs to know if it's theirs.
+  return `${at}, ${secs}${idea.clipId ? ', your clip, free' : ''}. ${STATE[idea.status]}.`;
 }
 
 /** A cutaway with its place in the video and a switch to keep it. Tap to play it in context. */

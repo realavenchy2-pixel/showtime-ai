@@ -137,9 +137,9 @@ export async function runExport(projectId: string, audio?: ExportAudio): Promise
       const seconds = Math.max(5, range.end - range.start);
       const phaseLabel = (phase: UpscalePhase, i: number) => {
         const which = formats.length === 1 ? '' : ` (${i + 1} of ${formats.length})`;
-        if (phase === 'upload') return `Sending it to Topaz${which}. Keep this tab open.`;
-        if (phase === 'waiting') return `Waiting for Topaz${which}. Keep this tab open.`;
-        if (phase === 'upscaling') return `Upscaling to ${resolution} with Topaz${which}. Keep this tab open.`;
+        if (phase === 'upload') return `Sending it to the upscaler${which}. Keep this tab open.`;
+        if (phase === 'waiting') return `Waiting for the upscaler${which}. Keep this tab open.`;
+        if (phase === 'upscaling') return `Upscaling to ${resolution}${which}. Keep this tab open.`;
         return `Bringing back the ${resolution} file${which}.`;
       };
       const phaseStart: Record<UpscalePhase, number> = { upload: 0, waiting: 0.15, upscaling: 0.15, download: 0.9 };
@@ -164,7 +164,7 @@ export async function runExport(projectId: string, audio?: ExportAudio): Promise
       } catch (err) {
         if (controller.signal.aborted) throw err;
         // The render on this device is still good: deliver it, and hand back what the upscale cost.
-        upscaleError = (err as Error)?.message || 'Topaz stopped';
+        upscaleError = (err as Error)?.message || 'the upscale stopped';
       }
     }
 

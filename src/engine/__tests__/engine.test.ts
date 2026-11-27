@@ -696,7 +696,9 @@ describe('live jobs', () => {
     let p = connectLive(setSwitchSettings(planned(), { resolution: 2160 }), caps);
     expect(p.pipeline).toBe('live');
     expect(p.switchSettings).toMatchObject({ model: 'switchx', maxFrames: 240, maxRefs: 1, resolution: 1080 });
-    expect(p.messages.at(-1)?.text).toMatch(/Live: the switch runs on SwitchX, up to 10 seconds a shot/);
+    expect(p.messages.at(-1)?.text).toMatch(/Live: the switch is on, up to 10 seconds a shot/);
+    // White label: no model or company names.
+    expect(p.messages.at(-1)?.text).not.toMatch(/SwitchX|Beeble|Claude/);
     expect(connectLive(p, caps)).toBe(p);
     p = runAgent(approvePlan(p));
     // No reference generator on the server: the looks step passes straight through, and the switch is a live job.

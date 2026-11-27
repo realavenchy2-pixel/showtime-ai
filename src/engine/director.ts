@@ -109,14 +109,14 @@ export function stageIntro(p: Project, id: StageId): { text: string; attachment?
       const kept = all.length - fresh;
       if (kept > 0) {
         return {
-          text: `Cut's locked. ${kept} ${kept === 1 ? 'shot is' : 'shots are'} the same as your last version, so I'm keeping ${kept === 1 ? 'it' : 'them'}. ${fresh === 0 ? 'Nothing new to switch.' : `${fresh} new ${fresh === 1 ? 'shot goes' : 'shots go'} through SwitchX.`}`,
+          text: `Cut's locked. ${kept} ${kept === 1 ? 'shot is' : 'shots are'} the same as your last version, so I'm keeping ${kept === 1 ? 'it' : 'them'}. ${fresh === 0 ? 'Nothing new to switch.' : `${fresh} new ${fresh === 1 ? 'shot goes' : 'shots go'} through the switch.`}`,
         };
       }
       const shots = all.length;
       const skipped = skippedSeconds(p);
       const saved = skipped >= 1 ? ` The ${Math.round(skipped)} seconds under b-roll are skipped, so you only pay for what's on screen.` : ' Only the seconds on screen get rendered.';
       return {
-        text: `Cut's locked. Reference frames first, then your performance goes through SwitchX in ${shots === 1 ? 'one shot' : `${shots} shots`}, ${SWITCHX.concurrency} at a time.${saved}`,
+        text: `Cut's locked. Reference frames first, then your performance goes through the switch in ${shots === 1 ? 'one shot' : `${shots} shots`}, ${SWITCHX.concurrency} at a time.${saved}`,
       };
     }
     case 'broll': {

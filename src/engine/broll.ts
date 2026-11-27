@@ -1,4 +1,5 @@
-import { barSec, brollShots } from './samples';
+import { backgroundStyle } from './production';
+import { barSec, BROLL_MODEL, brollShots } from './samples';
 import { framesFor, HANDLE_SEC } from './switchx';
 import type { BrollIdea, Project, SavedRender, Shot } from './types';
 
@@ -201,7 +202,7 @@ export function arrangeBroll(p: Project, prefer?: string): Project {
             status: 'idea',
             keep: true,
             cover: true,
-            model: ideas[0]?.model ?? 'omni',
+            model: BROLL_MODEL,
           };
           filler += 1;
           created.push(idea);
@@ -276,10 +277,14 @@ export function arrangeBroll(p: Project, prefer?: string): Project {
 
 /** The prompt for a generated cutaway: the shot, in the same world as the scene it cuts away from. */
 export function brollPrompt(p: Project, idea: BrollIdea): string {
+  if (idea.clipId) return idea.shot;
   const look = idea.sectionId ? p.looks[idea.sectionId] : undefined;
   const world = look?.prompt?.trim().split(/(?<=[.!?])\s+/)[0];
-  if (!world || idea.clipId) return idea.shot;
-  return `${idea.shot.replace(/[.\s]+$/, '')}. Light and color to match the scene it cuts away from: ${world}`;
+  // Same camera and mood as the switched scenes, so a cutaway never looks like another video.
+  const style = backgroundStyle(p);
+  const shot = idea.shot.replace(/[.\s]+$/, '');
+  const match = world ? ` Light and color to match the scene it cuts away from: ${world}` : '';
+  return `${shot}.${match}${style ? ` ${style}` : ''}`.trim();
 }
 
 // ---------- What goes to the switch ----------

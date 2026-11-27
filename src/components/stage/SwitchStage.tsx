@@ -9,7 +9,6 @@ import { scenesOf } from '@/engine/production';
 import { locationTitle } from '@/engine/samples';
 import { stageStatus } from '@/engine/stages';
 import { useApp } from '@/engine/store';
-import { switchCredits } from '@/engine/switchx';
 import type { AlphaMode, Project, Shot } from '@/engine/types';
 import { haptic } from '@/lib/haptics';
 import { color, radius, space } from '@/theme/tokens';
@@ -35,11 +34,7 @@ const RESOLUTIONS: { value: 720 | 1080 | 2160; label: string }[] = [
   { value: 2160, label: '4K' },
 ];
 
-function modelName(model: string): string {
-  return model.replace(/^switchx-/, 'SwitchX ').replace(/^switchx$/i, 'SwitchX');
-}
-
-/** Stage 5: every shot through SwitchX. Laid out like SwitchX itself: source, alpha mask, references, prompt, settings. */
+/** Stage 5: every shot through the switch: source, alpha mask, references, prompt, settings. */
 export function SwitchStage({ project }: { project: Project }) {
   const apply = useApp((s) => s.apply);
   const status = stageStatus(project, 'switch');
@@ -56,7 +51,6 @@ export function SwitchStage({ project }: { project: Project }) {
   const ready = shots.filter((s) => s.status === 'ready').length;
   const failed = shots.filter((s) => s.status === 'failed');
   const editable = shots.length === 0 && !project.job;
-  const totalCredits = shots.filter((s) => !s.reused).reduce((sum, s) => sum + switchCredits(s.frames, settings.resolution), 0);
   // A touch-up opened a scene's background: the switch waits until it's locked again.
   const reopened = scenesOf(project).find((sc) => sc.look?.reopened && !sc.look.locationLocked);
 
@@ -129,13 +123,13 @@ export function SwitchStage({ project }: { project: Project }) {
 
           <Panel n="1" title="Source">
             <T v="callout">{`${take.label}, ${formatTime(shot.start)} to ${formatTime(shot.end)}`}</T>
-            <T v="caption" c="smoke">{`${shot.frames} frames at ${shot.fps} fps. ${modelName(settings.model)} takes up to ${settings.maxFrames} in one shot.`}</T>
+            <T v="caption" c="smoke">{`${shot.frames} frames at ${shot.fps} fps. The switch takes up to ${settings.maxFrames} in one shot.`}</T>
           </Panel>
         </>
       ) : (
         <T v="body" c="smoke">
           {project.cut.locked
-            ? 'Every shot on screen goes through SwitchX with its scene’s look. Reference frames come first. Seconds under b-roll are skipped.'
+            ? 'Every shot on screen goes through the switch with its scene’s look. Reference frames come first. Seconds under b-roll are skipped.'
             : 'The switch opens once the cut is locked.'}
         </T>
       )}
@@ -162,7 +156,7 @@ export function SwitchStage({ project }: { project: Project }) {
           </Panel>
           <Panel title="Prompt">
             <T v="body" c="smoke">
-              {look.prompt || 'No prompt. SwitchX follows the reference alone.'}
+              {look.prompt || 'No prompt. The switch follows the reference alone.'}
             </T>
           </Panel>
         </>
@@ -172,8 +166,8 @@ export function SwitchStage({ project }: { project: Project }) {
         <Chips<720 | 1080 | 2160> label="Resolution" value={settings.resolution} disabled={!editable} onChange={(resolution) => apply(project.id, (p) => setSwitchSettings(p, { resolution }))} options={RESOLUTIONS} />
         <T v="caption" c="smoke">
           {shots.length
-            ? `${modelName(settings.model)}. ${shots.length} shots${shots.some((x) => x.reused) ? `, ${shots.filter((x) => x.reused).length} kept from your last version for free` : ''}, about ${totalCredits.toLocaleString()} Beeble credits at ${settings.resolution}p.`
-            : `${modelName(settings.model)}. Explore at 720p, then finish the keepers sharper.`}
+            ? `${shots.length} shots${shots.some((x) => x.reused) ? `, ${shots.filter((x) => x.reused).length} kept from your last version for free` : ''}, switched at ${settings.resolution}p.`
+            : 'Explore at 720p, then finish the keepers sharper.'}
         </T>
       </Panel>
 

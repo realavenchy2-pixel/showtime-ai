@@ -93,7 +93,7 @@ describe('b-roll for the switch', () => {
     expect(skippedSeconds(p)).toBeCloseTo(all - onScreen, 2);
     expect(skippedSeconds(p)).toBeGreaterThan(3);
     expect(p.messages.at(-1)?.text).toMatch(/seconds under b-roll are skipped/);
-    expect(p.messages.at(-1)?.text).toContain(`goes through SwitchX in ${shots.length} shots`);
+    expect(p.messages.at(-1)?.text).toContain(`goes through the switch in ${shots.length} shots`);
   });
 
   it('covers a stretch no take reaches with b-roll', () => {

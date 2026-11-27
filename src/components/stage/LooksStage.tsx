@@ -6,7 +6,6 @@ import { ChevronDown, ChevronUp, ImagePlus, X } from "@/components/icons";
 import {
   addLookRef,
   removeLookRef,
-  setBrollModel,
   setFxIntensity,
   setFxPack,
   setLook,
@@ -14,14 +13,12 @@ import {
   setLookPrompt,
   videoRange,
 } from "@/engine/actions";
-import { estimateBudget } from "@/engine/agent";
 import { currentStage } from "@/engine/stages";
 import { formatTime } from "@/engine/director";
 import { FX_INTENSITIES, FX_PACKS } from "@/engine/fx";
 import { LOCATIONS, locationTitle } from "@/engine/samples";
 import { useApp } from "@/engine/store";
 import type {
-  BrollModel,
   FxIntensity,
   FxPackId,
   LocationKind,
@@ -77,10 +74,6 @@ export function LooksStage({ project }: { project: Project }) {
   // Looks can change until the switch starts.
   const open =
     project.plates === "none" && !project.job && project.shots.length === 0;
-  const budget = estimateBudget(project);
-  const ideas = project.broll.ideas;
-  const model =
-    ideas.find((i) => i.status === "idea")?.model ?? ideas[0]?.model ?? "omni";
 
   return (
     <StageScreen
@@ -124,7 +117,7 @@ export function LooksStage({ project }: { project: Project }) {
           <T v="caption" c="ash" style={styles.center}>
             {thinking
               ? "Writing your shot list."
-              : "Three quick questions, then the director writes your shot list."}
+              : "Three quick questions and your camera, then the director writes your shot list."}
           </T>
         )
       }
@@ -188,8 +181,8 @@ export function LooksStage({ project }: { project: Project }) {
 
       {project.planApproved ? (
         <View style={stageStyles.block}>
-          <SectionTitle detail="Each one is modeled on a camera music videos are shot on. Your footage is saved untouched, so you can change it after the shoot.">
-            Pick your camera
+          <SectionTitle detail="Each one is modeled on a camera music videos are shot on. Backgrounds made from now on match it, and your footage is saved untouched, so you can change it after the shoot.">
+            Your camera
           </SectionTitle>
           <CameraLookPicker
             value={project.cameraLook}
@@ -202,7 +195,7 @@ export function LooksStage({ project }: { project: Project }) {
         <>
           <View style={stageStyles.block}>
             <SectionTitle
-              detail={`SwitchX rebuilds the world around you from the prompt and up to ${project.switchSettings.maxRefs} reference ${project.switchSettings.maxRefs === 1 ? "image" : "images"}. Your performance stays exactly as you shot it.`}
+              detail={`The switch rebuilds the world around you from the prompt and up to ${project.switchSettings.maxRefs} reference ${project.switchSettings.maxRefs === 1 ? "image" : "images"}. Your performance stays exactly as you shot it.`}
             >
               {sections.some((s) => s.scene)
                 ? "Fine-tune the switch"
@@ -263,7 +256,7 @@ export function LooksStage({ project }: { project: Project }) {
             })}
           </View>
 
-          {ideas.length ? (
+          {project.broll.ideas.length ? (
             <View style={stageStyles.block}>
               <SectionTitle
                 detail={`${cutawaySummary(project)} Spots move to cut points once your takes are in.`}
@@ -278,24 +271,6 @@ export function LooksStage({ project }: { project: Project }) {
                   disabled={idea.status !== "idea"}
                 />
               ))}
-              <Chips<BrollModel>
-                label="B-roll model"
-                value={model}
-                disabled={project.broll.approved || !!project.job}
-                onChange={(m) => apply(project.id, (p) => setBrollModel(p, m))}
-                options={[
-                  {
-                    value: "omni",
-                    label: "Gemini Omni",
-                    detail: "Sharper, 3 credits a second",
-                  },
-                  {
-                    value: "h3",
-                    label: "MiniMax H3",
-                    detail: "Faster, 2 credits a second",
-                  },
-                ]}
-              />
             </View>
           ) : null}
 
@@ -329,67 +304,9 @@ export function LooksStage({ project }: { project: Project }) {
             />
           </View>
 
-          {budget.totalCredits ? (
-            <View style={stageStyles.card}>
-              <T v="heading">Render budget</T>
-              <BudgetLine
-                label={`Switch, ${budget.switchFrames.toLocaleString()} frames at ${project.switchSettings.resolution}p`}
-                credits={budget.switchCredits}
-              />
-              <BudgetLine
-                label="Reference frames"
-                credits={budget.referenceCredits}
-              />
-              {budget.brollCredits ? (
-                <BudgetLine
-                  label={`B-roll, ${budget.brollSeconds} s`}
-                  credits={budget.brollCredits}
-                />
-              ) : null}
-              <View style={styles.rule} />
-              <BudgetLine
-                label="Total, in Beeble credits"
-                credits={budget.totalCredits}
-                strong
-              />
-              <T v="caption" c="ash">
-                What this video costs you to render. Artists only see their own
-                video credit.
-              </T>
-            </View>
-          ) : null}
         </>
       ) : null}
     </StageScreen>
-  );
-}
-
-function BudgetLine({
-  label,
-  credits,
-  strong,
-}: {
-  label: string;
-  credits: number;
-  strong?: boolean;
-}) {
-  return (
-    <View style={stageStyles.row}>
-      <T
-        v={strong ? "callout" : "caption"}
-        c={strong ? "chalk" : "smoke"}
-        style={stageStyles.flex}
-      >
-        {label}
-      </T>
-      <T
-        v={strong ? "callout" : "caption"}
-        c={strong ? "chalk" : "smoke"}
-        style={styles.tabular}
-      >
-        {credits.toLocaleString()}
-      </T>
-    </View>
   );
 }
 
@@ -522,7 +439,7 @@ function LookCard({
             </View>
             <T v="caption" c="ash">
               {look.refs.length
-                ? "SwitchX matches these. The prompt directs what happens."
+                ? "The switch matches these. The prompt directs what happens."
                 : "Optional. Without one I build a reference from a frame of your take."}
             </T>
           </View>
@@ -554,13 +471,6 @@ const styles = StyleSheet.create({
   countOn: { backgroundColor: color.accent },
   center: {
     textAlign: "center",
-  },
-  tabular: {
-    fontVariant: ["tabular-nums"],
-  },
-  rule: {
-    height: 1,
-    backgroundColor: color.hairline,
   },
   row: {
     flexDirection: "row",

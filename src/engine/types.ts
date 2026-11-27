@@ -137,6 +137,11 @@ export interface RefImage {
   prompt?: string;
   /** Already on the provider (made by the studio server), so the switch doesn't upload it again. */
   remoteUri?: string;
+  /**
+   * Made because the artist asked for something different (a change, or a fresh set). The studio
+   * server makes these with its backup image model, so a redo is a real second opinion.
+   */
+  retry?: boolean;
 }
 
 /** Where a section takes place: what SwitchX is asked to build around the artist. */

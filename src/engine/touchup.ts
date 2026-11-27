@@ -2,7 +2,7 @@ import { addDirectorMessage, revisit, videoRange } from './actions';
 import { arrangeBroll } from './broll';
 import { formatTime } from './director';
 import { guideFor, makeLocations, reviseLocation, sceneName, scenesOf, unlockLocation, unlockScene } from './production';
-import { pitchBroll, scenesFor, suggestedLooks } from './samples';
+import { BROLL_MODEL, BROLL_RETRY_MODEL, pitchBroll, scenesFor, suggestedLooks } from './samples';
 import { isStageDone } from './stages';
 import type { BrollIdea, Project, Section } from './types';
 import { latestVersion } from './versions';
@@ -44,7 +44,8 @@ export function remakeBroll(p: Project, ideaId: string): Project {
   if (p.broll.approved || p.job) return p;
   const idea = p.broll.ideas.find((i) => i.id === ideaId);
   if (!idea || idea.status !== 'clip' || idea.clipId) return p;
-  const ideas = p.broll.ideas.map((i) => (i.id === ideaId ? { ...i, status: 'idea' as const, keep: true, remoteId: undefined, url: undefined, mediaId: undefined } : i));
+  // A redo goes to the backup model: a different take, not the same model rolling again.
+  const ideas = p.broll.ideas.map((i) => (i.id === ideaId ? { ...i, status: 'idea' as const, keep: true, model: BROLL_RETRY_MODEL, remoteId: undefined, url: undefined, mediaId: undefined } : i));
   return { ...p, broll: { ...p.broll, ideas } };
 }
 
@@ -153,7 +154,7 @@ export function makeFullSong(p: Project, target?: { start: number; end: number }
   // A couple of cutaways for the new stretches; the organizer places them once the cut is in.
   if (added.length) {
     const taken = new Set(next.broll.ideas.map((i) => i.shot));
-    const pitched: BrollIdea[] = pitchBroll({ ...song, sections: added }, next.vibe, next.broll.ideas[0]?.model ?? 'omni')
+    const pitched: BrollIdea[] = pitchBroll({ ...song, sections: added }, next.vibe, BROLL_MODEL)
       .filter((i) => !taken.has(i.shot))
       .map((i, k) => ({ ...i, id: `broll-full-${now.toString(36)}-${k}` }));
     next = arrangeBroll({ ...next, broll: { ...next.broll, ideas: [...next.broll.ideas, ...pitched] } });

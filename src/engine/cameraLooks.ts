@@ -26,6 +26,11 @@ export interface CameraLook {
   highlights: [number, number, number];
   /** Highlight roll-off, 0 hard clip to 1 very soft (film-like). */
   rolloff: number;
+  /**
+   * How the camera sees, for the backgrounds generated to match it: lens, light and texture. Not its
+   * color grade, which goes on the whole video in the edit; graded backgrounds would get it twice.
+   */
+  prompt: string;
 }
 
 export const CAMERA_LOOKS: CameraLook[] = [
@@ -39,6 +44,7 @@ export const CAMERA_LOOKS: CameraLook[] = [
     shadows: [0.0, 0.02, 0.05],
     highlights: [0.05, 0.03, -0.02],
     rolloff: 0.85,
+    prompt: 'Shot on an ARRI Alexa 35 with cinema primes: soft highlight roll-off, wide dynamic range, shallow depth of field, gentle film-like texture.',
   },
   {
     id: 'venice',
@@ -50,6 +56,7 @@ export const CAMERA_LOOKS: CameraLook[] = [
     shadows: [0.0, 0.0, 0.06],
     highlights: [0.08, 0.04, -0.05],
     rolloff: 0.75,
+    prompt: 'Shot on a Sony Venice 2 with anamorphic glass: polished glossy light, deep clean shadows, soft background bokeh.',
   },
   {
     id: 'fx3',
@@ -61,6 +68,7 @@ export const CAMERA_LOOKS: CameraLook[] = [
     shadows: [0.02, 0.0, 0.0],
     highlights: [0.07, 0.05, -0.05],
     rolloff: 0.6,
+    prompt: 'Shot on a Sony FX3 with a fast prime: warm practical lights, punchy contrast, shallow depth of field.',
   },
   {
     id: 'red',
@@ -72,6 +80,7 @@ export const CAMERA_LOOKS: CameraLook[] = [
     shadows: [-0.05, 0.01, 0.08],
     highlights: [0.05, 0.03, 0.0],
     rolloff: 0.55,
+    prompt: 'Shot on a RED V-Raptor: crisp high detail, hard contrasty light, sharp glossy highlights.',
   },
   {
     id: 'canon',
@@ -83,6 +92,7 @@ export const CAMERA_LOOKS: CameraLook[] = [
     shadows: [0.02, 0.0, 0.03],
     highlights: [0.06, 0.02, 0.0],
     rolloff: 0.65,
+    prompt: 'Shot on a Canon C70: clean even light, soft flattering highlights, smooth detail.',
   },
   {
     id: 'pocket',
@@ -94,6 +104,7 @@ export const CAMERA_LOOKS: CameraLook[] = [
     shadows: [-0.03, 0.03, 0.07],
     highlights: [0.04, 0.03, -0.01],
     rolloff: 0.7,
+    prompt: 'Shot on a Blackmagic Pocket 6K with vintage lenses: filmic, a little raw, fine grain, indie-film light.',
   },
   {
     id: 'film500t',
@@ -105,6 +116,7 @@ export const CAMERA_LOOKS: CameraLook[] = [
     shadows: [-0.06, 0.04, 0.1],
     highlights: [0.12, 0.06, -0.05],
     rolloff: 0.95,
+    prompt: 'Shot on Kodak Vision3 500T film at night: glowing practical lights, halation around highlights, visible grain.',
   },
   {
     id: 'natural',
@@ -116,6 +128,7 @@ export const CAMERA_LOOKS: CameraLook[] = [
     shadows: [0, 0, 0],
     highlights: [0, 0, 0],
     rolloff: 0,
+    prompt: '',
   },
 ];
 

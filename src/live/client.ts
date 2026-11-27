@@ -171,7 +171,8 @@ export function brollStatus(cfg: ServerConfig, id: string): Promise<RemoteJob> {
   return call(cfg, 'GET', `/v1/broll/${encodeURIComponent(id)}`);
 }
 
-export function makeReference(cfg: ServerConfig, input: { prompt: string; aspect: string }): Promise<{ uri: string; dataUrl: string }> {
+/** `retry`: the artist asked for something different, so the server uses its backup image model first. */
+export function makeReference(cfg: ServerConfig, input: { prompt: string; aspect: string; retry?: boolean }): Promise<{ uri: string; dataUrl: string }> {
   return call(cfg, 'POST', '/v1/references', input, 120000);
 }
 

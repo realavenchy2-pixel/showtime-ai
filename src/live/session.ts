@@ -28,6 +28,7 @@ import {
   type ServerConfig,
 } from "./client";
 import { pickUp, type RunnerHost } from "./runner";
+import { plainWords } from "@/engine/whitelabel";
 
 // The app's connection to the studio server: whether one is connected, what it can run,
 // and the glue that sends live jobs and chat messages its way.
@@ -254,7 +255,11 @@ export function makeLocations(projectId: string): void {
   )
     return;
   for (const ref of locationsToMake(project)) {
-    makeReference(cfg, { prompt: ref.prompt ?? "", aspect: "16:9" })
+    makeReference(cfg, {
+      prompt: ref.prompt ?? "",
+      aspect: "16:9",
+      retry: !!ref.retry,
+    })
       .then(({ uri, dataUrl }) =>
         useApp
           .getState()
@@ -327,16 +332,14 @@ export function serverLine(
     case "on": {
       const sw = s.caps?.switch;
       if (!sw) return "Connected. The switch key is not set on the server yet";
-      if (sw.error) return `Connected, but Beeble says: ${sw.error}`;
-      const version = sw.model?.match(/(\d+\.\d+)/)?.[1];
+      if (sw.error) return `Connected, but the switch says: ${plainWords(sw.error)}`;
+      // White label: what's on, never whose model it is.
       const parts = [
-        `SwitchX${version ? ` ${version}` : ""}, ${Math.floor((sw.maxFrames ?? 240) / 24)}-second shots`,
+        `Switch on, ${Math.floor((sw.maxFrames ?? 240) / 24)}-second shots`,
       ];
-      if (s.caps?.broll.length)
-        parts.push(
-          `b-roll on ${s.caps.broll.map((m) => (m === "h3" ? "H3" : "Omni")).join(" and ")}`,
-        );
-      if (s.caps?.director) parts.push("Claude directing");
+      if (s.caps?.broll.length) parts.push("b-roll on");
+      if (s.caps?.references) parts.push("backgrounds on");
+      if (s.caps?.director) parts.push("AI director on");
       return parts.join(", ");
     }
     default:

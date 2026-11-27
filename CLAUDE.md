@@ -38,6 +38,10 @@ npm run export:web  # when a change touches web-only files or app.json
 - Import icons only from `@/components/icons`; add new ones there as per-icon imports. Importing `lucide-react-native` directly pulls every icon into the web bundle.
 - `app.json` sets `asyncRoutes.web` to false so the web build is one bundle. The hosted preview depends on that.
 
+## White label
+
+Artists never see which companies or models run Showtime: no model names, pickers or provider credits on screen, and provider text goes through `plainWords` (`src/engine/whitelabel.ts`; the server has its own copy in `server/src/app.mjs`). Each AI step has a default model and a backup that a redo or a failure falls to.
+
 ## Secrets
 
 No API keys in the app or the repo, ever. The studio server holds them; the app holds only the server address and an access code.

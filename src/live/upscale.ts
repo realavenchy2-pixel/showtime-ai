@@ -79,8 +79,8 @@ export async function upscaleVideo(cfg: ServerConfig, video: Blob, opts: Upscale
   const began = Date.now();
   let status = job;
   while (status.status !== 'ready') {
-    if (status.status === 'failed') throw new StudioError(status.error || 'Topaz could not upscale it', 502, 'UPSCALE_FAILED');
-    if (Date.now() - began > timeoutMs) throw new StudioError('Topaz took too long', 504, 'UPSCALE_TIMEOUT');
+    if (status.status === 'failed') throw new StudioError(status.error || 'the upscaler could not finish it', 502, 'UPSCALE_FAILED');
+    if (Date.now() - began > timeoutMs) throw new StudioError('the upscale took too long', 504, 'UPSCALE_TIMEOUT');
     const elapsed = (Date.now() - began) / 1000;
     // Eases toward the end without reaching it, since fal doesn't say how far along it is.
     report(status.status === 'queued' ? 'waiting' : 'upscaling', Math.min(0.95, 1 - Math.exp(-elapsed / expectSec)));
@@ -93,7 +93,7 @@ export async function upscaleVideo(cfg: ServerConfig, video: Blob, opts: Upscale
       throw err;
     }
   }
-  if (!status.url) throw new StudioError('Topaz sent back no file', 502, 'UPSCALE_FAILED');
+  if (!status.url) throw new StudioError('the upscaler sent back no file', 502, 'UPSCALE_FAILED');
 
   report('download', 0);
   const upscaled = await download(cfg, status.url, opts.signal);

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { createApp } from '../src/app.mjs';
+import { createApp, plainWords } from '../src/app.mjs';
 import { createBeeble, normalizeStatus, productInputs } from '../src/beeble.mjs';
 import { createBroll } from '../src/broll.mjs';
 import { cleanCommands, COMMAND_ENUMS, direct } from '../src/claude.mjs';
@@ -237,6 +237,74 @@ describe('The studio server', () => {
     const app = createApp(env, { fetch });
     const res = await post(app, '/v1/switch', { sourceUri: 'beeble://u/s.mp4', prompt: 'x' });
     expect(res.status).toBe(502);
+  });
+});
+
+describe('Backgrounds', () => {
+  const keys = { BEEBLE_API_KEY: 'bk', OPENAI_API_KEY: 'ok', GEMINI_API_KEY: 'gk', SHOWTIME_APP_KEY: 'door' };
+  const post = (app, body) =>
+    app(new Request('https://studio.test/v1/references', { method: 'POST', headers: { 'content-type': 'application/json', 'x-showtime-key': 'door' }, body: JSON.stringify(body) }));
+  const PNG = btoa('png-bytes');
+  const routes = (over = {}) => ({
+    'POST api.openai.com/v1/images/generations': { data: [{ b64_json: PNG }] },
+    'POST generativelanguage.googleapis.com/v1beta/interactions': { steps: [{ type: 'model_output', content: [{ type: 'image', mime_type: 'image/jpeg', data: btoa('jpg-bytes') }] }] },
+    'POST /v1/uploads': { id: 'u1', upload_url: 'https://s3.amazonaws.com/put', beeble_uri: 'beeble://uploads/u1/reference' },
+    'PUT s3.amazonaws.com/put': { ok: true },
+    ...over,
+  });
+  const painted = (fetch) => fetch.calls.filter((c) => /images\/generations|interactions/.test(c.url));
+
+  it('paints the first round with Sunburst 2.6 at high quality', async () => {
+    const fetch = fakeFetch(routes());
+    const res = await post(createApp(keys, { fetch }), { prompt: 'A rooftop at night', aspect: '16:9' });
+    expect(res.status).toBe(200);
+    const out = await res.json();
+    expect(out).toEqual({ uri: 'beeble://uploads/u1/reference', dataUrl: `data:image/png;base64,${PNG}` });
+    const calls = painted(fetch);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body).toMatchObject({ model: 'gpt-image-2.6-sunburst', quality: 'high', size: '1536x1024' });
+    expect(calls[0].body.prompt).toMatch(/no people in frame\. A rooftop at night/);
+  });
+
+  it('sends a redo to Nano Banana Pro first', async () => {
+    const fetch = fakeFetch(routes());
+    const out = await (await post(createApp(keys, { fetch }), { prompt: 'A rooftop at night. Change: make it rain', aspect: '16:9', retry: true })).json();
+    const calls = painted(fetch);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toContain('interactions?key=gk');
+    expect(calls[0].body).toMatchObject({ model: 'gemini-3-pro-image', response_format: { type: 'image', aspect_ratio: '16:9', image_size: '2K' } });
+    expect(out.dataUrl.startsWith('data:image/jpeg;base64,')).toBe(true);
+    // Stored with the right type for the switch.
+    expect(fetch.calls.find((c) => c.url.includes('/v1/uploads'))?.body).toEqual({ filename: 'reference.jpg' });
+  });
+
+  it('falls back to the other model when one fails, and works with either key alone', async () => {
+    const down = fakeFetch(routes({ 'POST api.openai.com/v1/images/generations': { __status: 500, body: { error: { message: 'OpenAI is overloaded' } } } }));
+    const res = await post(createApp(keys, { fetch: down }), { prompt: 'A beach', aspect: '16:9' });
+    expect(res.status).toBe(200);
+    expect(painted(down).map((c) => (c.url.includes('openai') ? 'default' : 'backup'))).toEqual(['default', 'backup']);
+
+    const googleOnly = fakeFetch(routes());
+    const app = createApp({ ...keys, OPENAI_API_KEY: undefined }, { fetch: googleOnly });
+    expect((await post(app, { prompt: 'A beach', aspect: '16:9' })).status).toBe(200);
+    expect(painted(googleOnly)[0].url).toContain('interactions');
+    const caps = await (await app(new Request('https://studio.test/v1/capabilities', { headers: { 'x-showtime-key': 'door' } }))).json();
+    expect(caps.references).toBe(true);
+  });
+
+  it('never names a model or company in what it tells the app', async () => {
+    const both = fakeFetch(
+      routes({
+        'POST api.openai.com/v1/images/generations': { __status: 429, body: { error: { message: 'OpenAI rate limit for gpt-image-2.6-sunburst' } } },
+        'POST generativelanguage.googleapis.com/v1beta/interactions': { __status: 429, body: { error: { message: 'Gemini quota exceeded' } } },
+      }),
+    );
+    const res = await post(createApp(keys, { fetch: both }), { prompt: 'A beach', aspect: '16:9' });
+    const { error } = await res.json();
+    expect(error.message).not.toMatch(/openai|gpt|sunburst|gemini|google|nano banana/i);
+    const none = await (await post(createApp({ SHOWTIME_APP_KEY: 'door' }, { fetch: fakeFetch({}) }), { prompt: 'x' })).json();
+    expect(none.error.message).toBe('The switch is not set up on this server yet.');
+    expect(plainWords('Beeble says SwitchX 3.0 is busy; Topaz Starlight failed; claude-sonnet-5-5 timed out')).toBe('the switch says the switch is busy; the upscaler failed; the director timed out');
   });
 });
 
