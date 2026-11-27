@@ -117,6 +117,8 @@ export function SetGuide3D({ guide, height = 240, compact }: Props) {
     guide.light === 'left' ? [-1.8, 2.1, 1.2] : guide.light === 'right' ? [1.8, 2.1, 1.2] : guide.light === 'overhead' ? [0, 2.6, 0.4] : [cam[0] * 0.6, 2.0, cam[2] + 0.5];
 
   const you = bodyFor(guide);
+  // The mic goes where your mouth is: lower and closer in when you're seated.
+  const mouth: Vec = guide.pose === 'sit' ? [0, 1.2, 0.1] : [0, 1.6, 0.28];
   const [hx, hy] = P(you.head);
   const headR = Math.max(5, px(0.12, you.head));
   const bodyW = Math.max(4, headR * 0.9);
@@ -247,20 +249,21 @@ export function SetGuide3D({ guide, height = 240, compact }: Props) {
                 );
               }
               if (pr.kind === 'stand') {
-                const [b1x, b1y] = P([0.05, 1.55, 0.45]);
+                const top: Vec = [0.05, mouth[1] - 0.05, mouth[2] + 0.17];
+              const [b1x, b1y] = P(top);
                 return (
                   <G key="stand">
-                    {line([0.05, 0, 0.45], [0.05, 1.55, 0.45], PROP, 3, 's1')}
+                    {line([0.05, 0, top[2]], top, PROP, 3, 's1')}
                     <Circle cx={b1x} cy={b1y} r={5} fill={PROP} />
                   </G>
                 );
               }
               if (pr.kind === 'mic') {
-                const [mx2, my2] = P([0, 1.66, 0.28]);
+                const [mx2, my2] = P(mouth);
                 return (
                   <G key="mic">
-                    {line([0, 2.6, 0.28], [0, 1.7, 0.28], PROP, 1.5, 'm1')}
-                    <Circle cx={mx2} cy={my2} r={Math.max(3, px(0.05, [0, 1.66, 0.28]))} fill={PROP} />
+                    {line([0, 2.6, mouth[2]], [0, mouth[1] + 0.04, mouth[2]], PROP, 1.5, 'm1')}
+                    <Circle cx={mx2} cy={my2} r={Math.max(3, px(0.05, mouth))} fill={PROP} />
                   </G>
                 );
               }

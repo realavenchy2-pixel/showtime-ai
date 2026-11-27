@@ -45,3 +45,7 @@ export { default as WandSparkles } from 'lucide-react-native/icons/wand-sparkles
 export { default as Rotate3d } from 'lucide-react-native/icons/rotate-3d';
 export { default as Footprints } from 'lucide-react-native/icons/footprints';
 export { default as Video } from 'lucide-react-native/icons/video';
+export { default as Armchair } from 'lucide-react-native/icons/armchair';
+export { default as HandGrab } from 'lucide-react-native/icons/hand-grab';
+export { default as MicVocal } from 'lucide-react-native/icons/mic-vocal';
+export { default as PersonStanding } from 'lucide-react-native/icons/person-standing';

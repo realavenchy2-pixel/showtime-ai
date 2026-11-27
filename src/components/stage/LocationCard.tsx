@@ -182,16 +182,6 @@ export function LocationCard({ project, scene, lyrics, showGuide = false }: { pr
         <Button label="Unlock to change it" variant="quiet" onPress={() => apply(project.id, (p) => unlockLocation(p, scene.index))} />
       ) : null}
 
-      {guide?.props?.length ? (
-        <View style={styles.props}>
-          <T v="micro" c="accentText">
-            {"You'll need"}
-          </T>
-          {guide.props.map((pr) => (
-            <T key={pr.kind} v="caption" c="smoke">{`For ${pr.for}: ${pr.say}`}</T>
-          ))}
-        </View>
-      ) : null}
 
       {showGuide && guide ? (
         <View style={styles.guide}>
@@ -219,7 +209,6 @@ const styles = StyleSheet.create({
   reviseRow: { flexDirection: 'row', gap: space.s, alignItems: 'center' },
   input: { flex: 1, flexBasis: 0, minWidth: 0, minHeight: 44, paddingHorizontal: space.m, borderRadius: radius.m, backgroundColor: color.flat, borderWidth: 1, borderColor: color.hairline, color: color.chalk, fontSize: 15 },
   iconBtn: { width: 44, height: 44, borderRadius: radius.m, backgroundColor: color.flat, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: color.hairline },
-  props: { gap: 4, padding: space.m, borderRadius: radius.m, backgroundColor: color.flat },
   guide: { gap: space.s },
   shot: { padding: space.m, borderRadius: radius.m, backgroundColor: color.flat },
 });

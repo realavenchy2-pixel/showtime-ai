@@ -479,7 +479,7 @@ const PROP_RULES: { kind: PropKind; test: RegExp; raw?: boolean; for: string; sa
     test: MIC_HANGING,
     raw: true,
     for: 'the hanging mic',
-    say: "Nothing to hold: perform to a spot a hand's width in front of your mouth, where the mic hangs.",
+    say: "Hang a stand-in at mouth height, a hand's width in front of your face: a sock or hairbrush on a string or charger cable, tied to a door frame, a curtain rod or a broom across two chairs. Rap into it like the real mic.",
   },
   {
     kind: 'stand',
@@ -542,6 +542,49 @@ export function propsFor(text: string): Prop[] {
   const mics = out.filter((p) => p.kind === 'mic' || p.kind === 'stand');
   const drop = mics.length > 1 ? (MIC_STAND.test(clean) ? 'mic' : 'stand') : undefined;
   return out.filter((p) => p.kind !== drop).slice(0, 2);
+}
+
+/** One thing to set up before a scene: how you're placed, or a stand-in for something in the scene. */
+export interface SetupItem {
+  kind: 'pose' | PropKind;
+  title: string;
+  say: string;
+}
+
+const POSE_TITLE: Record<Exclude<Pose, 'stand'>, string> = { sit: 'Sit down', hang: 'Hang on', lean: 'Lean back' };
+/** The prop each pose is done on: its instructions become the pose's own. */
+const POSE_PROP: Record<Exclude<Pose, 'stand'>, PropKind[]> = { sit: ['seat', 'steps'], hang: ['bar'], lean: ['wall'] };
+const POSE_SAY: Record<Exclude<Pose, 'stand'>, string> = {
+  sit: 'This scene is seated. Sit on a chair or stool at the height the seat has in the scene.',
+  hang: 'This scene has you hanging on. Grip something at head height: a door frame, a pull-up bar, or a broom across two chairs.',
+  lean: 'This scene has you leaning. Lean on a wall or the back of a chair at hip height.',
+};
+const PROP_TITLE: Record<PropKind, string> = {
+  bar: 'Something to hang on',
+  stand: 'A stand-in for the mic stand',
+  mic: 'A stand-in for the hanging mic',
+  seat: 'A seat',
+  wall: 'Something to lean on',
+  table: 'A table',
+  steps: 'A step',
+};
+
+/**
+ * What to set up before a scene, in order: how you're placed first (sit down, hang on, lean back),
+ * then a stand-in for everything you touch. The switch keeps your body exactly as shot, so the pose
+ * and the props have to be real for the scene to look real.
+ */
+export function setupList(g: Pick<SetGuide, 'pose' | 'props'>): SetupItem[] {
+  const props = g.props ?? [];
+  const out: SetupItem[] = [];
+  let used: PropKind | undefined;
+  if (g.pose !== 'stand') {
+    const prop = props.find((p) => POSE_PROP[g.pose as Exclude<Pose, 'stand'>].includes(p.kind));
+    used = prop?.kind;
+    out.push({ kind: 'pose', title: POSE_TITLE[g.pose as Exclude<Pose, 'stand'>], say: prop?.say ?? POSE_SAY[g.pose as Exclude<Pose, 'stand'>] });
+  }
+  for (const p of props) if (p.kind !== used) out.push({ kind: p.kind, title: PROP_TITLE[p.kind], say: p.say });
+  return out;
 }
 
 // ---------- The song ----------

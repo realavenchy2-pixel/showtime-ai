@@ -919,6 +919,8 @@ export function recordLabel(p: Project, sceneIndex: number): string | undefined 
     sceneName(scene),
     `take ${takesFor(p, sceneIndex).length + 1}`,
     guide ? `${FRAMING_NAME[guide.framing]} ${zoomLabel(guide)}` : "",
+    // The pose is the one thing that's easy to forget once the song starts.
+    guide?.pose === "sit" ? "seated" : guide?.pose === "hang" ? "hanging on" : guide?.pose === "lean" ? "leaning" : "",
   ]
     .filter(Boolean)
     .join(" · ");

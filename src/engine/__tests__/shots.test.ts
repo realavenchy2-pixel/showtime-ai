@@ -5,7 +5,7 @@ import { applyCommand, parseCommands } from '../agent';
 import { lockPlan } from '../brief';
 import { canChangeShot, coverageTakes, lockScene, propsFor, readScene, recordLabel, scenesOf, setSceneShot } from '../production';
 import { locationPreset, DEMO_TRACKS, songFromDemo, withScenes } from '../samples';
-import { callShot, coverFor, FRAMINGS, frameHeight, rigFor, SHOT_ANGLES, upgradeGuide, type SceneRead } from '../shots';
+import { callShot, coverFor, FRAMINGS, frameHeight, rigFor, setupList, SHOT_ANGLES, upgradeGuide, type SceneRead } from '../shots';
 import { summarize } from '../summary';
 import type { Pose, Project, SetGuide } from '../types';
 
@@ -114,6 +114,17 @@ describe("the director's shot calls", () => {
     expect(lot.props).toEqual([]);
   });
 
+  it('says to sit down and to rig a stand-in for the mic, before anything else', () => {
+    const seatedAtMic = callShot(read({ plan: 'Sitting on a stool in a black studio with one microphone hanging from the ceiling' }));
+    const list = setupList({ pose: seatedAtMic.pose, props: seatedAtMic.props });
+    expect(list.map((i) => i.title)).toEqual(['Sit down', 'A stand-in for the hanging mic']);
+    expect(list[1].say).toMatch(/mouth height/);
+    const stand = callShot(read({ plan: 'Old-school mic stand on a dark stage' }));
+    expect(setupList(stand).map((i) => i.title)).toEqual(['A stand-in for the mic stand']);
+    expect(setupList(callShot(read({ plan: 'Hanging off a helicopter' })))[0].title).toBe('Hang on');
+    expect(setupList(callShot(read({ plan: 'An empty white room' })))).toEqual([]);
+  });
+
   it('reads what the song is about across every scene, more lightly than the scene itself', () => {
     const pick = callShot(read({ about: 'My grandma passing and how I kept going' }));
     expect(pick.framing).toBe('close');
@@ -189,6 +200,8 @@ describe('set guides', () => {
   it('labels the recorder with the scene, the take and the shot', () => {
     const p = shootReady();
     expect(recordLabel(p, 0)).toMatch(/^Scene 1 · .+ · take 1 · (Wide|Medium|Close-up) (1|1\.5|2)x$/);
+    const seated = setSceneShot({ ...p, looks: { ...p.looks, [scenesOf(p)[0].section.id]: { location: 'custom', prompt: 'In the driver seat of a car', refs: [] } } }, 0, 'medium');
+    expect(recordLabel(seated, 0)).toMatch(/· seated$/);
   });
 
   it('fills in guides saved before shot calls, keeping their framing and distance', () => {
