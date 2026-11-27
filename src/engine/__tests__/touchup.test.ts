@@ -144,6 +144,14 @@ describe('touch-ups', () => {
     expect(v.changes).toContain('New background in scene 2');
   });
 
+  it('never reuses a demo render once the project is live', () => {
+    const open = lockLocation(reviseLocation(newBackground(exported(), 1), 1, 'make it rain'), 1);
+    expect(startSwitch(open).shots.some((s) => s.reused)).toBe(true);
+    const live = startSwitch({ ...open, pipeline: 'live' });
+    expect(live.shots.length).toBeGreaterThan(0);
+    expect(live.shots.some((s) => s.reused)).toBe(false);
+  });
+
   it('goes back to the camera for one scene and keeps every other scene', () => {
     const p = exported();
     const open = reshootScene(p, 0);

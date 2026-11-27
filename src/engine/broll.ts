@@ -385,6 +385,8 @@ function reusedShots(p: Project, need: PerformancePiece[], have: Shot[]): Shot[]
   const out: Shot[] = [];
   for (const r of p.renders ?? []) {
     if (r.lookKey !== lookKey(p, r.sectionId)) continue;
+    // A demo render has no file behind it; once the project is live only real renders are reused.
+    if (p.pipeline === 'live' && !r.renderUrl && !r.renderMediaId) continue;
     if (!need.some((x) => x.takeId === r.takeId && x.sectionId === r.sectionId && x.start < r.end - 0.05 && x.end > r.start + 0.05)) continue;
     if ([...have, ...out].some((s) => s.takeId === r.takeId && Math.abs(s.start - r.start) < 0.01 && Math.abs(s.end - r.end) < 0.01)) continue;
     const { lookKey: _key, madeFor: _made, ...shot } = r;
