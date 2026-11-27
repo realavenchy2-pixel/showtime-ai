@@ -40,18 +40,18 @@ describe('optics', () => {
           const rig = rigFor(framing, pose, angle);
           const span = rig.frame[1] - rig.frame[0];
           expect(frameHeight(rig.distance, rig.lensMm)).toBeGreaterThanOrEqual(span);
-          if (rig.noZoomDistance) expect(frameHeight(rig.noZoomDistance, 24)).toBeGreaterThanOrEqual(span);
+          if (rig.backDistance) expect(frameHeight(rig.backDistance, rig.backZoom! * 24)).toBeGreaterThanOrEqual(span);
           if (rig.ultraWideDistance) expect(frameHeight(rig.ultraWideDistance, 13)).toBeGreaterThanOrEqual(span);
         }
       }
     }
   });
 
-  it('frames a close-up on 2x from about 1.6 m, chest up, not from arm\'s length', () => {
+  it('lays out the front camera at 1x, with the back camera\'s zoom as the sharper option', () => {
     const close = rigFor('close', 'stand', 'level');
-    expect(close.zoom).toBe(2);
-    expect(close.distance).toBeCloseTo(1.6, 1);
-    expect(close.noZoomDistance).toBeCloseTo(0.8, 1);
+    expect(close).toMatchObject({ zoom: 1, lensMm: 24, backZoom: 2 });
+    expect(close.distance).toBeCloseTo(0.8, 1);
+    expect(close.backDistance).toBeCloseTo(1.6, 1);
     expect(rigFor('wide', 'stand', 'low').height).toBeLessThan(1);
     expect(rigFor('medium', 'sit', 'level').height).toBeLessThan(rigFor('medium', 'stand', 'level').height);
   });
@@ -147,9 +147,10 @@ describe('set guides', () => {
   it('says where the phone goes in meters and feet, with a way out for no zoom and small rooms', () => {
     const p = setSceneShot(setSceneShot(shootReady(), 0, 'wide'), 1, 'close');
     const [wide, close] = p.guides!;
-    expect(close.steps.join(' ')).toMatch(/2x zoom/);
-    expect(close.steps.join(' ')).toMatch(/No zoom on your camera\? Bring the phone in to 0\.8 m \(2\.6 ft\) at 1x/);
-    expect(wide.steps.join(' ')).toMatch(/Short on room\? On 0\.5x/);
+    expect(close.camera.z).toBeCloseTo(0.8, 1);
+    expect(close.steps.join(' ')).toMatch(/front camera at 1x, so you can watch yourself/);
+    expect(close.steps.join(' ')).toMatch(/back camera\? 2x zoom from 1\.6 m \(5\.2 ft\)/);
+    expect(wide.steps.join(' ')).toMatch(/Short on room\? The back camera's 0\.5x/);
     expect(wide.steps.join(' ')).toMatch(/\d\.\d m \(\d+\.\d ft\)/);
   });
 
@@ -199,7 +200,7 @@ describe('set guides', () => {
 
   it('labels the recorder with the scene, the take and the shot', () => {
     const p = shootReady();
-    expect(recordLabel(p, 0)).toMatch(/^Scene 1 · .+ · take 1 · (Wide|Medium|Close-up) (1|1\.5|2)x$/);
+    expect(recordLabel(p, 0)).toMatch(/^Scene 1 · .+ · take 1 · (Wide|Medium|Close-up) 1x$/);
     const seated = setSceneShot({ ...p, looks: { ...p.looks, [scenesOf(p)[0].section.id]: { location: 'custom', prompt: 'In the driver seat of a car', refs: [] } } }, 0, 'medium');
     expect(recordLabel(seated, 0)).toMatch(/· seated$/);
   });

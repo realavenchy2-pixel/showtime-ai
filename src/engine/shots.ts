@@ -61,24 +61,30 @@ export interface Rig {
   zoom: number;
   backroomM: number;
   frame: [number, number];
-  /** Where the phone goes at 1x when the camera can't zoom. */
-  noZoomDistance?: number;
-  /** Where the phone goes on the 0.5x lens, for small rooms. */
+  /** The back camera on zoom: sharper, and kinder to faces from further back. */
+  backZoom?: number;
+  backDistance?: number;
+  /** Where the phone goes on the back camera's 0.5x lens, for small rooms. */
   ultraWideDistance?: number;
 }
 
+/**
+ * Where the phone goes for a framing. Most artists film themselves on the front camera so they can
+ * watch the take, and front cameras don't zoom: the guide is laid out for the front camera at 1x.
+ * The back camera's zoom is the sharper option for someone filming (`backDistance`, `backZoom`).
+ */
 export function rigFor(framing: Framing, pose: Pose, angle: ShotAngle): Rig {
   const frame = SPAN[pose][framing];
-  const lensMm = LENS_MM[framing];
   const zoom = ZOOM[framing];
   return {
-    distance: fitDistance(frame, lensMm, ROOM[framing]),
+    distance: fitDistance(frame, LENS_MM.wide, ROOM[framing]),
     height: HEIGHT[pose][angle][framing],
-    lensMm,
-    zoom,
+    lensMm: LENS_MM.wide,
+    zoom: 1,
     backroomM: BACKROOM[framing],
     frame,
-    noZoomDistance: zoom > 1 ? fitDistance(frame, LENS_MM.wide, ROOM[framing]) : undefined,
+    backZoom: zoom > 1 ? zoom : undefined,
+    backDistance: zoom > 1 ? fitDistance(frame, LENS_MM[framing], ROOM[framing]) : undefined,
     ultraWideDistance: framing === 'wide' ? fitDistance(frame, ULTRA_WIDE_MM, ROOM[framing]) : undefined,
   };
 }
@@ -666,9 +672,9 @@ export function buildGuide(scene: number, pick: ShotPick, place: { side: number;
     MARK[pick.pose](len(rig.backroomM)),
     `Propped up: phone on a tripod or books, ${len(rig.distance)} away${side ? ', a half step off center' : ', straight on'}, ${len(rig.height)} off the floor, about ${heightWord(rig.height, pick.pose)}${tilt}. Stay on your mark; the editor adds the zoom-ins and the handheld feel.`,
     FILMING[pick.move],
-    `${IN_FRAME[pick.pose][pick.framing]}, ${rig.zoom === 1 ? '1x lens' : `${rig.zoom}x zoom`}. Leave a little room around you, so the editor can punch in on the beat.`,
-    ...(rig.noZoomDistance ? [`No zoom on your camera? Bring the phone in to ${len(rig.noZoomDistance)} at 1x.`] : []),
-    ...(rig.ultraWideDistance ? [`Short on room? On 0.5x the phone can come in to ${len(rig.ultraWideDistance)}.`] : []),
+    `${IN_FRAME[pick.pose][pick.framing]}, front camera at 1x, so you can watch yourself. Leave a little room around you, so the editor can punch in on the beat.`,
+    ...(rig.backDistance ? [`Someone filming on the back camera? ${rig.backZoom}x zoom from ${len(rig.backDistance)} is sharper and kinder to your face.`] : []),
+    ...(rig.ultraWideDistance ? [`Short on room? The back camera's 0.5x can come in to ${len(rig.ultraWideDistance)}.`] : []),
     light === 'behind camera' ? 'Main light behind the phone, pointing at you.' : `Main light on your ${light}, so the background stays clean.`,
   ];
   return {
