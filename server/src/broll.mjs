@@ -1,5 +1,9 @@
-// B-roll generation. MiniMax H3 runs through fal's queue; Gemini Omni runs through fal when
-// FAL_OMNI_MODEL names an endpoint, otherwise straight from Google when GEMINI_API_KEY is set.
+// B-roll generation. MAGI-2 (the default) runs through the Higgsfield API; MiniMax H3 runs through
+// fal's queue; Gemini Omni (the backup for a redo) runs through fal when FAL_OMNI_MODEL names an
+// endpoint, otherwise straight from Google when GEMINI_API_KEY is set.
+//
+// MAGI-2 checked against https://open.higgsfield.ai/models/sand/magi-2/text-to-video/api-reference and
+// https://docs.higgsfield.ai (submit, then poll status_url; a finished clip is video.url) on 2026-11-27.
 //
 // fal H3 input checked against https://fal.ai/models/minimax/h3/text-to-video/llms.txt and Omni against
 // https://aistudio.google.com/docs/omni.md, both on 2026-11-14.
@@ -7,6 +11,7 @@
 import { ProviderError } from './beeble.mjs';
 
 const FAL_QUEUE = 'https://queue.fal.run/';
+const HIGGSFIELD = 'https://api.higgsfield.ai/';
 
 function b64url(text) {
   return btoa(text).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -19,11 +24,24 @@ function unb64url(text) {
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
 /**
- * @param {{ falKey?: string, geminiKey?: string, falH3Model?: string, falOmniModel?: string, fetch?: typeof fetch }} cfg
+ * @param {{ falKey?: string, geminiKey?: string, higgsfieldKey?: string, magiModel?: string, falH3Model?: string, falOmniModel?: string, fetch?: typeof fetch }} cfg
  */
 export function createBroll(cfg) {
   const doFetch = cfg.fetch ?? globalThis.fetch;
   const h3 = cfg.falH3Model || 'minimax/h3/text-to-video';
+  const magi = cfg.magiModel || 'sand/magi-2/text-to-video';
+
+  async function higgsfield(method, url, body) {
+    if (!url.startsWith(HIGGSFIELD)) throw new ProviderError('Unexpected b-roll job address.', 400);
+    const res = await doFetch(url, {
+      method,
+      headers: { Authorization: `Key ${cfg.higgsfieldKey}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => undefined);
+    if (!res.ok) throw new ProviderError(data?.detail?.[0]?.msg ?? data?.detail ?? data?.error ?? `Higgsfield answered ${res.status}`, res.status);
+    return data;
+  }
 
   async function fal(method, url, body) {
     if (!url.startsWith(FAL_QUEUE)) throw new ProviderError('Unexpected b-roll job address.', 400);
@@ -41,13 +59,14 @@ export function createBroll(cfg) {
     /** Which b-roll models this server can run. */
     models() {
       const out = [];
+      if (cfg.higgsfieldKey) out.push('magi');
       if (cfg.falKey) out.push('h3');
       if ((cfg.falKey && cfg.falOmniModel) || cfg.geminiKey) out.push('omni');
       return out;
     },
 
     /**
-     * @param {{ model: 'h3' | 'omni', prompt: string, durationSec: number, aspect: string }} job
+     * @param {{ model: 'magi' | 'h3' | 'omni', prompt: string, durationSec: number, aspect: string }} job
      * @returns {Promise<{ id: string, status: string, url?: string, dataUrl?: string, model: string }>}
      */
     async start(job) {
@@ -57,6 +76,13 @@ export function createBroll(cfg) {
       if (available.length === 0) throw new ProviderError('No b-roll provider is set up on this server.', 501, 'NO_BROLL');
       const model = available.includes(job.model) ? job.model : available[0];
       const aspect = ['16:9', '9:16', '1:1'].includes(job.aspect) ? job.aspect : '16:9';
+
+      if (model === 'magi') {
+        // No generated sound: the song plays under every cutaway.
+        const q = await higgsfield('POST', HIGGSFIELD + magi, { prompt, duration: clamp(Math.round(job.durationSec), 4, 30), resolution: '1080p', aspect_ratio: aspect, generate_audio: false });
+        if (typeof q?.status_url !== 'string') throw new ProviderError('The b-roll job did not start.', 502);
+        return { id: `h:${b64url(q.status_url)}`, status: 'queued', model };
+      }
 
       if (model === 'h3' || (model === 'omni' && cfg.falKey && cfg.falOmniModel)) {
         const endpoint = model === 'h3' ? h3 : cfg.falOmniModel;
@@ -86,6 +112,17 @@ export function createBroll(cfg) {
     },
 
     async status(id) {
+      if (id.startsWith('h:')) {
+        const s = await higgsfield('GET', unb64url(id.slice(2)));
+        const word = String(s?.status ?? '');
+        if (word === 'completed') {
+          const url = s?.video?.url;
+          return url ? { id, status: 'ready', url } : { id, status: 'failed', error: 'The clip came back empty.' };
+        }
+        if (word === 'nsfw') return { id, status: 'failed', error: "The clip was blocked by the content filter. Try describing it another way." };
+        if (word === 'failed' || word === 'canceled') return { id, status: 'failed', error: s?.error ?? 'The b-roll render failed.' };
+        return { id, status: word === 'queued' ? 'queued' : 'rendering' };
+      }
       if (!id.startsWith('f:')) throw new ProviderError('Unknown b-roll job.', 404);
       const [statusUrl, responseUrl] = JSON.parse(unb64url(id.slice(2)));
       const s = await fal('GET', statusUrl);

@@ -10,7 +10,7 @@ const NAMES: [RegExp, string][] = [
   [/\b(?:openai|chatgpt|gpt[\s-]?image[\w.-]*|sunburst)\b/gi, 'the image service'],
   [/\b(?:gemini(?:[\s-]+(?:omni|\d[\w.-]*))*|nano\s+banana(?:\s+(?:pro|\d+(?:\.\d+)?))?)\b/gi, 'the render service'],
   [/\bomni\b/gi, 'the render service'],
-  [/\b(?:minimax(?:\s+h3)?|h3|hailuo|seedance|kling|veo|sora)\b/gi, 'the render service'],
+  [/\b(?:minimax(?:\s+h3)?|h3|hailuo|seedance|kling|veo|sora|magi-?2?|sand\.ai|higgsfield)\b/gi, 'the render service'],
   [/\bfal(?:\.ai|\.run|\.media)?\b/gi, 'the render service'],
   [/\b(?:anthropic|claude(?:-[\w.-]+)?)\b/gi, 'the director'],
 ];

@@ -403,6 +403,38 @@ describe('B-roll', () => {
     expect(createBroll({ geminiKey: 'g' }).models()).toEqual(['omni']);
     expect(createBroll({}).models()).toEqual([]);
   });
+
+  it('runs MAGI-2 on Higgsfield first: 1080p, up to 30 seconds, no generated sound', async () => {
+    const status = 'https://api.higgsfield.ai/requests/req1/status';
+    let state = { status: 'in_progress', request_id: 'req1' };
+    const fetch = fakeFetch({
+      'POST api.higgsfield.ai/sand/magi-2/text-to-video': { status: 'queued', request_id: 'req1', status_url: status, cancel_url: 'https://api.higgsfield.ai/requests/req1/cancel' },
+      'GET /requests/req1/status': () => state,
+    });
+    const broll = createBroll({ higgsfieldKey: 'kid:secret', falKey: 'fk', geminiKey: 'g', fetch });
+    expect(broll.models()).toEqual(['magi', 'h3', 'omni']);
+    const started = await broll.start({ model: 'magi', prompt: 'Chrome rims spinning in the rain', durationSec: 42, aspect: '9:16' });
+    expect(started).toMatchObject({ status: 'queued', model: 'magi' });
+    expect(fetch.calls[0].headers.Authorization).toBe('Key kid:secret');
+    expect(fetch.calls[0].body).toEqual({ prompt: 'Chrome rims spinning in the rain', duration: 30, resolution: '1080p', aspect_ratio: '9:16', generate_audio: false });
+    expect(await broll.status(started.id)).toMatchObject({ status: 'rendering' });
+    state = { status: 'completed', request_id: 'req1', video: { url: 'https://cdn.higgsfield.ai/out/clip.mp4' } };
+    expect(await broll.status(started.id)).toEqual({ id: started.id, status: 'ready', url: 'https://cdn.higgsfield.ai/out/clip.mp4' });
+    state = { status: 'nsfw', request_id: 'req1' };
+    expect(await broll.status(started.id)).toMatchObject({ status: 'failed' });
+    // A redo asks for the Google backup, and gets it.
+    const google = fakeFetch({ 'POST generativelanguage.googleapis.com/v1beta/interactions': { steps: [{ content: [{ type: 'video', mime_type: 'video/mp4', data: 'AAAA' }] }] } });
+    const backup = await createBroll({ higgsfieldKey: 'kid:secret', geminiKey: 'g', fetch: google }).start({ model: 'omni', prompt: 'Rims again', durationSec: 5, aspect: '9:16' });
+    expect(backup).toMatchObject({ status: 'ready', model: 'omni' });
+  });
+
+  it('takes the Higgsfield key as one value or as an id and secret, and passes its clips through', async () => {
+    const app = createApp({ HF_API_KEY_ID: 'kid', HF_API_KEY_SECRET: 'sec', SHOWTIME_APP_KEY: 'door' }, { fetch: fakeFetch({ 'GET cdn.higgsfield.ai': 'video-bytes' }) });
+    const caps = await (await app(new Request('https://studio.test/v1/capabilities', { headers: { 'x-showtime-key': 'door' } }))).json();
+    expect(caps.broll).toEqual(['magi']);
+    const clip = await app(new Request(`https://studio.test/v1/fetch?url=${encodeURIComponent('https://cdn.higgsfield.ai/out/clip.mp4')}`, { headers: { 'x-showtime-key': 'door' } }));
+    expect(clip.status).toBe(200);
+  });
 });
 
 describe('Upscale', () => {

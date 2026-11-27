@@ -45,7 +45,7 @@ export function switchCredits(frames: number, resolution: number): number {
 }
 
 /** Beeble credits per second of generated b-roll at 720p-class output. */
-export const BROLL_CREDITS_PER_SEC = { omni: 3, h3: 2 } as const;
+export const BROLL_CREDITS_PER_SEC = { magi: 3, omni: 3, h3: 2 } as const;
 
 /** Beeble credits for one generated reference frame (GPT Image Sunburst, high quality, 1K). */
 export const REFERENCE_CREDITS = 5;

@@ -285,10 +285,11 @@ export function brollShots(vibe: Vibe | undefined): string[] {
 
 /** B-roll the director pitches: lyric-matched for the demo songs, vibe-matched otherwise. */
 /**
- * B-roll runs on a default model, and a clip the artist asks to make again goes to the backup, the
- * best Google video model, for a real second take. The artist never sees either name.
+ * B-roll runs on a default model (MAGI-2: 1080p, up to 30 seconds, second on Higgsfield's blind arena),
+ * and a clip the artist asks to make again goes to the backup, the best Google video model, for a
+ * real second take. When the server lacks one, it runs whatever it has. The artist never sees a name.
  */
-export const BROLL_MODEL: BrollIdea['model'] = 'h3';
+export const BROLL_MODEL: BrollIdea['model'] = 'magi';
 export const BROLL_RETRY_MODEL: BrollIdea['model'] = 'omni';
 
 export function pitchBroll(song: Song, vibe: Vibe | undefined, model: BrollIdea['model'] = BROLL_MODEL): BrollIdea[] {

@@ -20,7 +20,7 @@ import { createBroll } from './broll.mjs';
 import { direct } from './claude.mjs';
 import { createUpscale } from './upscale.mjs';
 
-const RESULT_HOSTS = /(^|\.)(beeble\.ai|amazonaws\.com|googleapis\.com|googleusercontent\.com|cloudfront\.net|fal\.media|fal\.run|r2\.cloudflarestorage\.com|blob\.core\.windows\.net)$/i;
+const RESULT_HOSTS = /(^|\.)(beeble\.ai|higgsfield\.ai|amazonaws\.com|googleapis\.com|googleusercontent\.com|cloudfront\.net|fal\.media|fal\.run|r2\.cloudflarestorage\.com|blob\.core\.windows\.net)$/i;
 
 // White label: the app never names the companies or models behind it, errors included.
 const NAMES = [
@@ -31,7 +31,7 @@ const NAMES = [
   [/\b(?:openai|chatgpt|gpt[\s-]?image[\w.-]*|sunburst)\b/gi, 'the image service'],
   [/\b(?:gemini(?:[\s-]+(?:omni|\d[\w.-]*))*|nano\s+banana(?:\s+(?:pro|\d+(?:\.\d+)?))?|google)\b/gi, 'the render service'],
   [/\bomni\b/gi, 'the render service'],
-  [/\b(?:minimax(?:\s+h3)?|h3|hailuo|seedance|kling|veo|sora)\b/gi, 'the render service'],
+  [/\b(?:minimax(?:\s+h3)?|h3|hailuo|seedance|kling|veo|sora|magi-?2?|sand\.ai|higgsfield)\b/gi, 'the render service'],
   [/\bfal(?:\.ai|\.run|\.media)?\b/gi, 'the render service'],
   [/\b(?:anthropic|claude(?:-[\w.-]+)?)\b/gi, 'the director'],
 ];
@@ -61,7 +61,8 @@ function allowedHost(url) {
 export function createApp(env, deps = {}) {
   const doFetch = deps.fetch ?? globalThis.fetch;
   const beeble = env.BEEBLE_API_KEY ? createBeeble({ apiKey: env.BEEBLE_API_KEY, fetch: doFetch, prefer: env.SWITCHX_VERSION || undefined }) : undefined;
-  const broll = createBroll({ falKey: env.FAL_KEY, geminiKey: env.GEMINI_API_KEY, falH3Model: env.FAL_H3_MODEL, falOmniModel: env.FAL_OMNI_MODEL, fetch: doFetch });
+  const higgsfieldKey = env.HIGGSFIELD_API_KEY || (env.HF_API_KEY_ID && env.HF_API_KEY_SECRET ? `${env.HF_API_KEY_ID}:${env.HF_API_KEY_SECRET}` : undefined);
+  const broll = createBroll({ falKey: env.FAL_KEY, geminiKey: env.GEMINI_API_KEY, higgsfieldKey, magiModel: env.HIGGSFIELD_MAGI_MODEL, falH3Model: env.FAL_H3_MODEL, falOmniModel: env.FAL_OMNI_MODEL, fetch: doFetch });
   const upscale = createUpscale({ falKey: env.FAL_KEY, fetch: doFetch, restUrl: env.FAL_REST_URL, cleanModel: env.FAL_UPSCALE_MODEL, detailModel: env.FAL_UPSCALE_DETAIL_MODEL });
   const claude = env.ANTHROPIC_API_KEY ? { apiKey: env.ANTHROPIC_API_KEY, model: env.CLAUDE_MODEL, fetch: doFetch } : undefined;
   const origins = (env.ALLOWED_ORIGINS ?? '*').split(',').map((s) => s.trim()).filter(Boolean);
@@ -248,7 +249,7 @@ export function createApp(env, deps = {}) {
 
       if (method === 'POST' && path === '/v1/broll') {
         const input = await body(request);
-        return json(request, await broll.start({ model: input.model === 'omni' ? 'omni' : 'h3', prompt: input.prompt, durationSec: Number(input.durationSec) || 5, aspect: input.aspect }));
+        return json(request, await broll.start({ model: ['magi', 'omni', 'h3'].includes(input.model) ? input.model : 'magi', prompt: input.prompt, durationSec: Number(input.durationSec) || 5, aspect: input.aspect }));
       }
 
       const br = path.match(/^\/v1\/broll\/([^/]+)$/);

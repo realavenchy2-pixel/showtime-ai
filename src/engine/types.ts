@@ -249,7 +249,8 @@ export interface VersionRecipe {
 }
 
 export type BrollStatus = 'idea' | 'clip' | 'approved';
-export type BrollModel = 'omni' | 'h3';
+/** The b-roll engines the studio server can run. Never shown to the artist. */
+export type BrollModel = 'magi' | 'omni' | 'h3';
 
 export interface BrollIdea {
   id: string;
