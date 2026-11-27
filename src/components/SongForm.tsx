@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
 import { Check, Music, Pause, Play, Upload } from '@/components/icons';
 import { formatTime } from '@/engine/director';
+import { smartSnippetStart } from '@/engine/production';
 import { songFromImport, withScenes } from '@/engine/samples';
 import { useApp } from '@/engine/store';
 import type { Format, Song } from '@/engine/types';
@@ -25,6 +26,8 @@ export interface SongChoice {
 /** Stage 1: the track. Where it gets posted is picked at export. The video is laid out in scenes by time, not by verse and hook. */
 export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v: SongChoice) => void }) {
   const [busy, setBusy] = useState(false);
+  /** The song the artist just picked here: it plays as soon as it's loaded. */
+  const [fresh, setFresh] = useState<string | undefined>();
   const song = value.song;
   // Songs from earlier videos, newest first. No demo beats: this is for your own music.
   const projects = useApp((st) => st.projects);
@@ -45,7 +48,9 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
       }
       const bpm = picked.bpm > 0 ? picked.bpm : 120;
       // No guessing at verses and hooks: the director lays the video out in scenes on the beat.
-      onChange({ ...value, song: withScenes(songFromImport({ ...picked, bpm, sections: [] }, true)) });
+      const next = withScenes(songFromImport({ ...picked, bpm, sections: [] }, true));
+      setFresh(next.audioId);
+      onChange({ ...value, song: next });
       haptic.success();
     } catch {
       showToast('That file could not be read. Try an MP3, WAV or M4A.');
@@ -83,6 +88,7 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
                   key={r.audioId ?? r.id}
                   onPress={() => {
                     haptic.select();
+                    setFresh(r.audioId);
                     onChange({ ...value, song: withScenes({ ...r, sections: [] }, undefined) });
                   }}
                   scaleTo={0.99}
@@ -107,7 +113,7 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
 
       {song ? (
         <View style={styles.mapped}>
-          <Listen song={song} />
+          <Listen song={song} autoplay={!!song.audioId && song.audioId === fresh} />
         </View>
       ) : null}
 
@@ -116,8 +122,15 @@ export function SongForm({ value, onChange }: { value: SongChoice; onChange: (v:
 }
 
 /** Play the track before going on: tap play, or tap or drag the bar to jump. Where the video starts is picked right before the first take. */
-function Listen({ song }: { song: Song }) {
+function Listen({ song, autoplay }: { song: Song; autoplay?: boolean }) {
   const preview = useSongPreview(song);
+  // A song just picked plays straight away from its biggest part, so the artist hears they picked the right one.
+  const started = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!autoplay || !preview.ready || started.current === song.audioId) return;
+    started.current = song.audioId;
+    preview.play(smartSnippetStart(song, 20));
+  }, [autoplay, preview, song]);
   const duration = Math.max(0.001, song.durationSec);
   const [width, setWidth] = useState(0);
   const [drag, setDrag] = useState<number | undefined>();

@@ -1,11 +1,12 @@
-import { useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState, type ComponentRef } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
 import Svg, { Circle, G, Line, Polygon, Polyline, Text as SvgText } from 'react-native-svg';
 
 import { MOVE_NAME, shotTitle } from '@/engine/shots';
 import type { SetGuide } from '@/engine/types';
 import { color, radius, space } from '@/theme/tokens';
 
+import { Minus, Plus, RotateCcw, Smartphone } from './icons';
 import { Press } from './Press';
 import { T } from './T';
 
@@ -75,19 +76,40 @@ function bodyFor(guide: SetGuide): { body: Vec[]; head: Vec; arms: [Vec, Vec][] 
 export function SetGuide3D({ guide, height = 240, compact }: Props) {
   const [width, setWidth] = useState(0);
   const [yaw, setYaw] = useState(0.75);
+  const [pitch, setPitch] = useState(0.5);
+  const [zoom, setZoom] = useState(1);
   const [mode, setMode] = useState<Mode>('stand');
-  const drag = useRef({ x: 0, yaw: 0.75 });
+  /** The set from outside, or what the phone itself sees from where the guide puts it. */
+  const [view, setView] = useState<'set' | 'phone'>('set');
+  const drag = useRef({ x: 0, y: 0, yaw: 0.75, pitch: 0.5, zoom: 1, pinch: 0 });
+  const box = useRef<ComponentRef<typeof View>>(null);
+  const clampZoom = (z: number) => Math.min(2.6, Math.max(0.55, z));
+  const phoneView = view === 'phone';
+  // On the web a scroll wheel or trackpad pinch over the guide zooms it.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || compact) return;
+    const el = box.current as unknown as HTMLElement | null;
+    if (!el?.addEventListener) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom((z) => clampZoom(z * Math.exp(-e.deltaY / 400)));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [compact]);
   const cam: Vec = [guide.camera.x, guide.camera.height, guide.camera.z];
   const target: Vec = [0, 0.75, guide.camera.z * 0.48];
-  const dist = Math.max(5.4, guide.camera.z * 1.8);
-  const pitch = 0.5;
-  const eye: Vec = [target[0] + Math.sin(yaw) * Math.cos(pitch) * dist, target[1] + Math.sin(pitch) * dist, target[2] + Math.cos(yaw) * Math.cos(pitch) * dist];
-  const f = norm(sub(target, eye));
+  const dist = Math.max(5.4, guide.camera.z * 1.8) / zoom;
+  const orbit: Vec = [target[0] + Math.sin(yaw) * Math.cos(pitch) * dist, target[1] + Math.sin(pitch) * dist, target[2] + Math.cos(yaw) * Math.cos(pitch) * dist];
+  // The phone's view: from the phone, aimed at the middle of what's in shot, through its lens.
+  const aim: Vec = [0, (guide.frame[0] + guide.frame[1]) / 2, 0];
+  const eye: Vec = phoneView ? cam : orbit;
+  const f = norm(sub(phoneView ? aim : target, eye));
   const r = norm(cross(f, [0, 1, 0]));
   const u = cross(r, f);
-  const focal = (width || 320) * 1.15;
+  const focal = phoneView ? (height / 2 / (19.5 / 2 / guide.lensMm)) * zoom : (width || 320) * 1.15;
   const cx = (width || 320) / 2;
-  const cy = height / 2 + 6;
+  const cy = phoneView ? height / 2 : height / 2 + 6;
   const P = (p: Vec): [number, number] => {
     const d = sub(p, eye);
     const z = Math.max(0.1, dot(d, f));
@@ -104,7 +126,7 @@ export function SetGuide3D({ guide, height = 240, compact }: Props) {
 
   // Floor grid, half-meter squares, from behind the wall to past the camera.
   const back = -guide.backroomM;
-  const front = guide.camera.z + 1;
+  const front = phoneView ? Math.max(0.5, guide.camera.z - 0.3) : guide.camera.z + 1;
   const grid: [Vec, Vec][] = [];
   for (let x = -2.5; x <= 2.51; x += 0.5) grid.push([[x, 0, back], [x, 0, front]]);
   for (let z = back; z <= front + 0.01; z += 0.5) grid.push([[-2.5, 0, z], [2.5, 0, z]]);
@@ -120,8 +142,8 @@ export function SetGuide3D({ guide, height = 240, compact }: Props) {
   // The mic goes where your mouth is: lower and closer in when you're seated.
   const mouth: Vec = guide.pose === 'sit' ? [0, 1.2, 0.1] : [0, 1.6, 0.28];
   const [hx, hy] = P(you.head);
-  const headR = Math.max(5, px(0.12, you.head));
-  const bodyW = Math.max(4, headR * 0.9);
+  const headR = Math.max(5, px(phoneView ? 0.1 : 0.12, you.head));
+  const bodyW = Math.max(4, headR * (phoneView ? 0.55 : 0.9));
   const [cxp, cyp] = P(cam);
   const [cfx, cfy] = P([cam[0], 0, cam[2]]);
   const [mx, my] = P([0, 0, 0]);
@@ -210,28 +232,41 @@ export function SetGuide3D({ guide, height = 240, compact }: Props) {
         </View>
       ) : null}
       <View
+        ref={box}
         style={[styles.wrap, { height }]}
         onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
         onStartShouldSetResponder={() => !compact}
         onMoveShouldSetResponder={() => !compact}
         onResponderTerminationRequest={() => false}
         onResponderGrant={(e) => {
-          drag.current = { x: e.nativeEvent.pageX, yaw };
+          drag.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, yaw, pitch, zoom, pinch: 0 };
         }}
-        onResponderMove={(e) => setYaw(drag.current.yaw + (e.nativeEvent.pageX - drag.current.x) / 120)}
+        onResponderMove={(e) => {
+          const touches = e.nativeEvent.touches ?? [];
+          // Two fingers pinch to zoom; one finger turns the set and tilts it.
+          if (touches.length >= 2) {
+            const span = Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY);
+            if (!drag.current.pinch) drag.current = { ...drag.current, pinch: span, zoom };
+            else setZoom(clampZoom((drag.current.zoom * span) / drag.current.pinch));
+            return;
+          }
+          if (phoneView || drag.current.pinch) return;
+          setYaw(drag.current.yaw + (e.nativeEvent.pageX - drag.current.x) / 120);
+          setPitch(Math.min(1.35, Math.max(0.08, drag.current.pitch + (e.nativeEvent.pageY - drag.current.y) / 160)));
+        }}
         accessibilityLabel={`Set guide, ${shotTitle(guide)}. Stand on your mark with ${guide.backroomM} meters behind you. Phone ${guide.camera.z} meters away at ${guide.camera.height} meters high, ${guide.zoom === 1 ? 'main lens' : `${guide.zoom} times zoom`}. Someone filming: ${MOVE_NAME[guide.move].toLowerCase()}.`}>
         {width > 0 ? (
           <Svg width={width} height={height}>
             {grid.map(([a, b], i) => line(a, b, color.hairline, 1, `g${i}`))}
             <Polygon points={pts(wall)} fill="rgba(255,255,255,0.05)" stroke={color.hairlineStrong} strokeWidth={1} />
             {/* Distance on the floor */}
-            <Line x1={mx} y1={my} x2={cfx} y2={cfy} stroke={color.smoke} strokeDasharray="4 4" strokeWidth={1.5} />
+            {phoneView ? null : <Line x1={mx} y1={my} x2={cfx} y2={cfy} stroke={color.smoke} strokeDasharray="4 4" strokeWidth={1.5} />}
             {/* What the phone sees */}
-            {frame.map((corner, i) => {
+            {!phoneView && frame.map((corner, i) => {
               const [x, y] = P(corner);
               return <Line key={`f${i}`} x1={cxp} y1={cyp} x2={x} y2={y} stroke={color.accent} strokeOpacity={0.55} strokeWidth={1} />;
             })}
-            <Polygon points={pts(frame)} fill={color.accentSoft} stroke={color.accent} strokeWidth={1.2} />
+            <Polygon points={pts(frame)} fill={phoneView ? 'none' : color.accentSoft} stroke={color.accent} strokeWidth={1.2} strokeDasharray={phoneView ? '6 4' : undefined} />
             {/* Your mark */}
             <G>
               <Line x1={mx - 10} y1={my - 5} x2={mx + 10} y2={my + 5} stroke={color.accent} strokeWidth={3} />
@@ -292,9 +327,10 @@ export function SetGuide3D({ guide, height = 240, compact }: Props) {
             {/* You */}
             <Polyline points={pts(you.body)} fill="none" stroke={color.chalk} strokeWidth={bodyW} strokeLinecap="round" strokeLinejoin="round" />
             {you.arms.map(([a, b], i) => line(a, b, color.chalk, Math.max(2.5, bodyW * 0.45), `a${i}`))}
+            {line(you.body[you.body.length - 1], you.head, color.chalk, Math.max(3, bodyW * 0.6), 'neck')}
             <Circle cx={hx} cy={hy} r={headR} fill={color.chalk} />
-            {/* The phone: on a stand, or in someone's hands with the move they make */}
-            {film ? (
+            {/* The phone: on a stand, or in someone's hands with the move they make. Not drawn from its own view. */}
+            {phoneView ? null : film ? (
               <G>
                 {screenPath.length > 1 ? (
                   <>
@@ -310,17 +346,22 @@ export function SetGuide3D({ guide, height = 240, compact }: Props) {
             ) : (
               <Line x1={cfx} y1={cfy} x2={cxp} y2={cyp} stroke={color.smoke} strokeWidth={2} />
             )}
-            <Polygon
-              points={`${cxp - camW},${cyp - camW * 0.6} ${cxp + camW},${cyp - camW * 0.6} ${cxp + camW},${cyp + camW * 0.6} ${cxp - camW},${cyp + camW * 0.6}`}
-              fill={color.flat}
-              stroke={color.chalk}
-              strokeWidth={1.5}
-            />
-            <Circle cx={cxp} cy={cyp} r={camW * 0.35} fill={color.accent} />
+            {phoneView ? null : (
+              <>
+                <Polygon
+                  points={`${cxp - camW},${cyp - camW * 0.6} ${cxp + camW},${cyp - camW * 0.6} ${cxp + camW},${cyp + camW * 0.6} ${cxp - camW},${cyp + camW * 0.6}`}
+                  fill={color.flat}
+                  stroke={color.chalk}
+                  strokeWidth={1.5}
+                />
+                <Circle cx={cxp} cy={cyp} r={camW * 0.35} fill={color.accent} />
+              </>
+            )}
             {/* Light */}
             <Circle cx={lx} cy={ly} r={7} fill={PROP} opacity={0.9} />
             <Circle cx={lx} cy={ly} r={13} fill={PROP} opacity={0.18} />
-            {!compact ? (
+            {!compact && phoneView ? label('What your phone sees from its spot', 12, 20, color.chalk, { bold: true }) : null}
+            {!compact && !phoneView ? (
               <>
                 {label(`${guide.camera.z.toFixed(1)} m`, dx, dy + 16, color.smoke, { anchor: 'middle' })}
                 {lx > (width || 320) / 2 ? label('Light', lx - 16, ly + 4, color.smoke, { size: 10, anchor: 'end' }) : label('Light', lx + 16, ly + 4, color.smoke, { size: 10 })}
@@ -334,13 +375,52 @@ export function SetGuide3D({ guide, height = 240, compact }: Props) {
           </Svg>
         ) : null}
         {!compact ? (
+          <>
           <View style={styles.hint} pointerEvents="none">
             <T v="micro" c="smoke">
-              Drag to look around
+              {phoneView ? 'Pinch to zoom' : 'Drag to turn · pinch to zoom'}
             </T>
           </View>
+          </>
         ) : null}
       </View>
+      {!compact ? (
+          <View style={styles.toolRow}>
+            {[
+              { key: 'out', Icon: Minus, label: 'Zoom out', on: () => setZoom((z) => clampZoom(z / 1.25)) },
+              { key: 'in', Icon: Plus, label: 'Zoom in', on: () => setZoom((z) => clampZoom(z * 1.25)) },
+              {
+                key: 'reset',
+                Icon: RotateCcw,
+                label: 'Back to the start',
+                on: () => {
+                  setYaw(0.75);
+                  setPitch(0.5);
+                  setZoom(1);
+                  setView('set');
+                },
+              },
+            ].map(({ key, Icon, label: name, on }) => (
+              <Press key={key} onPress={on} style={styles.tool} hitSlop={6} accessibilityLabel={name}>
+                <Icon size={16} color={color.chalk} />
+              </Press>
+            ))}
+            <Press
+              onPress={() => {
+                setView(phoneView ? 'set' : 'phone');
+                setZoom(1);
+              }}
+              style={[styles.tool, styles.toolWide, phoneView && styles.modeOn]}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: phoneView }}
+              accessibilityLabel="See it from the phone">
+              <Smartphone size={14} color={phoneView ? color.stage : color.chalk} />
+              <T v="micro" c={phoneView ? 'stage' : 'chalk'}>
+                {"Phone's view"}
+              </T>
+            </Press>
+          </View>
+      ) : null}
     </View>
   );
 }
@@ -372,6 +452,26 @@ const styles = StyleSheet.create({
   modeOn: {
     backgroundColor: color.chalk,
     borderColor: color.chalk,
+  },
+  toolRow: {
+    flexDirection: 'row',
+    gap: space.xs,
+    justifyContent: 'flex-end',
+  },
+  tool: {
+    minWidth: 30,
+    height: 30,
+    paddingHorizontal: space.s,
+    borderRadius: radius.pill,
+    backgroundColor: color.flat,
+    borderWidth: 1,
+    borderColor: color.hairlineStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toolWide: {
+    flexDirection: 'row',
+    gap: 4,
   },
   hint: {
     position: 'absolute',
