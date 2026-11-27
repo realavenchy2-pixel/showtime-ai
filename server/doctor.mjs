@@ -37,5 +37,6 @@ if (!env.ANTHROPIC_API_KEY) {
 
 const models = createBroll({ falKey: env.FAL_KEY, geminiKey: env.GEMINI_API_KEY, falOmniModel: env.FAL_OMNI_MODEL }).models();
 line(models.length > 0, models.length ? `B-roll models: ${models.join(', ')}.` : 'No b-roll key (FAL_KEY or GEMINI_API_KEY). B-roll stays simulated.');
+line(!!env.FAL_KEY, env.FAL_KEY ? 'Topaz upscale on fal: 1440p and 4K exports are sharpened, not just stretched.' : 'No FAL_KEY: 1440p and 4K exports are off.');
 line(!!env.OPENAI_API_KEY, env.OPENAI_API_KEY ? 'OpenAI key set: reference frames can be generated.' : 'OPENAI_API_KEY is not set. Looks run from the prompt and your own reference images.');
 line(!!env.SHOWTIME_APP_KEY, env.SHOWTIME_APP_KEY ? 'Access code is set.' : 'SHOWTIME_APP_KEY is not set: anyone with the server address can spend your credits.');

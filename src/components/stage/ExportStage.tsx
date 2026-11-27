@@ -2,12 +2,13 @@ import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { Check, Monitor, Smartphone } from '@/components/icons';
-import { exportCost, isSubscribed, setExportFormats, setResolution } from '@/engine/actions';
+import { exportCost, isSubscribed, setExportFormats, setResolution, setUpscaler } from '@/engine/actions';
 import { stageStatus } from '@/engine/stages';
 import { useApp } from '@/engine/store';
-import type { Format, Project, Resolution } from '@/engine/types';
+import type { Format, Project, Resolution, UpscaleLook } from '@/engine/types';
 import { latestVersion } from '@/engine/versions';
-import { cancelExport, runExport, targetDimensions } from '@/lib/exportRun';
+import { cancelExport, deliveredDimensions, deviceExportSize, runExport, upscalesOnServer } from '@/lib/exportRun';
+import { useUpscaleLooks } from '@/live/session';
 import { haptic } from '@/lib/haptics';
 import { canExport, prepareExportAudio } from '@/media/exporter';
 import { color, radius, space } from '@/theme/tokens';
@@ -37,11 +38,22 @@ export function ExportStage({ project }: { project: Project }) {
   const state = project.exportState;
   const working = project.job?.stage === 'export';
   const onDevice = canExport();
-  const live = project.pipeline === 'live';
+  const looks = useUpscaleLooks();
+  const canUpscale = looks.length > 0;
+  // 1440p and 4K come from Topaz on the studio server. Without one they can't be picked.
+  const blocked = (resolution: Resolution) => onDevice && upscalesOnServer(resolution) && !canUpscale;
+  const upscaling = onDevice && upscalesOnServer(state.resolution) && canUpscale;
+  const phoneSize = deviceExportSize() < 1920;
   const cost = exportCost(project, plan);
   // What each size adds on top of the base price, for this video on this plan.
-  const extraAt = (resolution: Resolution) => exportCost({ ...project, exportState: { ...state, resolution } }, plan) - exportCost({ ...project, exportState: { ...state, resolution: '1080p' } }, plan);
-  const sizeNote = (resolution: Resolution) => (extraAt(resolution) > 0 ? `+${extraAt(resolution)} credit` : 'Included');
+  // Max detail is priced on its own chip, so sizes are priced with the clean upscale.
+  const extraAt = (resolution: Resolution) =>
+    exportCost({ ...project, exportState: { ...state, resolution, upscaler: 'clean' } }, plan) - exportCost({ ...project, exportState: { ...state, resolution: '1080p' } }, plan);
+  const plusCredits = (n: number) => `+${n} ${n === 1 ? 'credit' : 'credits'}`;
+  const sizeNote = (resolution: Resolution) => (blocked(resolution) ? 'Needs the studio server' : extraAt(resolution) > 0 ? plusCredits(extraAt(resolution)) : 'Included');
+  // What max detail adds over the clean upscale, at the size picked.
+  const detailExtra =
+    exportCost({ ...project, exportState: { ...state, upscaler: 'detail' } }, plan) - exportCost({ ...project, exportState: { ...state, upscaler: 'clean' } }, plan);
   const editable = !state.done && !project.job && project.final.locked;
 
   const toggle = (format: Format) => {
@@ -55,6 +67,7 @@ export function ExportStage({ project }: { project: Project }) {
     const audio = onDevice ? prepareExportAudio(project.song) : undefined;
     const outcome = await runExport(project.id, audio);
     if (outcome === 'needCredits') router.push('/paywall');
+    if (outcome === 'needServer') router.push('/account');
     if (outcome === 'done') haptic.success();
   };
 
@@ -77,9 +90,11 @@ export function ExportStage({ project }: { project: Project }) {
           <WrappedNote text={`${latest ? `v${latest.n} is exported.` : 'Exported.'} Touch it up below, or tap Export on the slate to render it again in other sizes.`} />
         ) : status === 'locked' ? null : (
           <>
-            <Button label={exportLabel} disabled={state.formats.length === 0} onPress={() => void start()} />
+            <Button label={exportLabel} disabled={state.formats.length === 0 || blocked(state.resolution)} onPress={() => void start()} />
             <T v="caption" c="ash" style={styles.center}>
-              {`${priceNote}${onDevice ? ' It renders on this device in about the length of the song per format.' : ''}`}
+              {blocked(state.resolution)
+                ? `${state.resolution} is upscaled on the studio server. Connect it under Account, or pick 1080p.`
+                : `${priceNote}${onDevice ? ' It renders on this device in about the length of the song per format.' : ''}${upscaling ? ' Then Topaz upscales it, a few minutes per format.' : ''}`}
             </T>
           </>
         )
@@ -118,7 +133,7 @@ export function ExportStage({ project }: { project: Project }) {
                   <View style={stageStyles.flex}>
                     <T v="callout">{f.title}</T>
                     <T v="caption" c="smoke">
-                      {`${f.detail}, ${targetDimensions(f.id, state.resolution).width} x ${targetDimensions(f.id, state.resolution).height}`}
+                      {`${f.detail}, ${deliveredDimensions(f.id, state.resolution).width} x ${deliveredDimensions(f.id, state.resolution).height}`}
                     </T>
                   </View>
                   <View style={[styles.check, on && styles.checkOn]}>{on ? <Check size={14} color={color.stage} /> : null}</View>
@@ -128,7 +143,10 @@ export function ExportStage({ project }: { project: Project }) {
           </View>
 
           <View style={stageStyles.block}>
-            <SectionTitle detail={live ? '1440p and 4K are upscaled on the studio server. Always 24 fps.' : '720p and 1080p render here. 1440p and 4K finish on the studio server once it is connected. Always 24 fps.'}>How sharp</SectionTitle>
+            <SectionTitle
+              detail={`${phoneSize ? 'This phone renders up to 720p.' : '720p and 1080p render here.'} ${canUpscale ? 'Topaz upscales 1440p and 4K on the studio server.' : '1440p and 4K are upscaled on the studio server, once you connect it under Account.'} Always 24 fps.`}>
+              How sharp
+            </SectionTitle>
             <Chips<Resolution>
               label="Resolution"
               value={state.resolution}
@@ -136,12 +154,28 @@ export function ExportStage({ project }: { project: Project }) {
               onChange={(resolution) => apply(project.id, (p) => setResolution(p, resolution))}
               options={[
                 { value: '720p', label: '720p', detail: 'Smallest file' },
-                { value: '1080p', label: '1080p HD', detail: 'Included' },
-                { value: '1440p', label: '1440p 2K', detail: sizeNote('1440p') },
-                { value: '4K', label: '4K', detail: sizeNote('4K') },
+                { value: '1080p', label: '1080p HD', detail: phoneSize && onDevice ? '720p on this phone' : 'Included' },
+                { value: '1440p', label: '1440p 2K', detail: sizeNote('1440p'), disabled: blocked('1440p') },
+                { value: '4K', label: '4K', detail: sizeNote('4K'), disabled: blocked('4K') },
               ]}
             />
           </View>
+
+          {upscaling ? (
+            <View style={stageStyles.block}>
+              <SectionTitle detail="Topaz runs on the studio server after the render here. Both keep your timing and sound.">Upscaler</SectionTitle>
+              <Chips<UpscaleLook>
+                label="Upscaler"
+                value={state.upscaler ?? 'clean'}
+                disabled={!editable}
+                onChange={(look) => apply(project.id, (p) => setUpscaler(p, look))}
+                options={[
+                  { value: 'clean', label: 'Clean', detail: 'Topaz Proteus, true to your footage', disabled: !looks.includes('clean') },
+                  { value: 'detail', label: 'Max detail', detail: `Topaz Starlight${detailExtra > 0 ? `, ${plusCredits(detailExtra)}` : ''}`, disabled: !looks.includes('detail') },
+                ]}
+              />
+            </View>
+          ) : null}
           <VersionsList project={project} />
         </>
       )}

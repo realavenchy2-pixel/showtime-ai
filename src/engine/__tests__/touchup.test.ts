@@ -7,8 +7,10 @@ import {
   approveBroll,
   buildEdit,
   createProject,
+  deliverAt,
   exportCost,
   exportVideo,
+  finishJob,
   finishShooting,
   generateBroll,
   lockEdit,
@@ -16,9 +18,11 @@ import {
   setAutonomy,
   setResolution,
   setFxPack,
+  setUpscaler,
   settle,
   skipStage,
   startSwitch,
+  upscaleFailed,
   videoRange,
 } from '../actions';
 import { parseCommands, respond, settleAuto } from '../agent';
@@ -101,6 +105,36 @@ describe('versions', () => {
     const again = touchUpEdit(toExport(lockEdit(big)));
     expect(exportCost(setResolution(again, '4K'), 'Standard')).toBe(0);
     expect(exportCost(setResolution(again, '1440p'), 'Standard')).toBe(0);
+  });
+
+  it('charges one more for Topaz Starlight at 1440p and 4K, on every plan', () => {
+    const open = touchUpEdit(exported());
+    const detail = setUpscaler(open, 'detail');
+    // At 1080p nothing is upscaled, so the look costs nothing.
+    expect(exportCost(detail, 'Standard')).toBe(0);
+    expect(exportCost(setResolution(detail, '4K'), 'Standard')).toBe(2);
+    expect(exportCost(setResolution(detail, '4K'), 'Premium')).toBe(1);
+    expect(exportCost(setResolution(detail, '1440p'), 'Free trial')).toBe(3);
+    expect(exportCost(setResolution(planned(), '4K'), 'Free trial')).toBe(2);
+    expect(exportCost(setUpscaler(setResolution(planned(), '4K'), 'detail'), 'Free trial')).toBe(3);
+  });
+
+  it('delivers the on-device size when the upscale does not finish, and hands the upscale credit back', () => {
+    const ready = setUpscaler(setResolution(lockEdit(touchUpEdit(exported())), '4K'), 'clean');
+    expect(currentStage(ready)?.id).toBe('export');
+    const running = exportVideo(ready, 2, { external: true });
+    expect(running.job?.stage).toBe('export');
+    const fell = upscaleFailed(running, '1080p', 'Topaz timed out.', 1);
+    expect(fell.exportState.resolution).toBe('1080p');
+    expect(fell.exportState.creditsCharged).toBe(1);
+    expect(fell.messages.at(-1)?.text).toBe("The 4K upscale didn't finish (Topaz timed out). You have it in 1080p and the upscale credit is back.");
+    const done = finishJob(fell);
+    expect(latestVersion(done)?.resolution).toBe('1080p');
+    // Only a running export can fall back.
+    expect(upscaleFailed(ready, '1080p', 'x', 1)).toBe(ready);
+    // A phone renders 1080p as 720p, and the version says so.
+    const phone = finishJob(deliverAt(exportVideo(setResolution(lockEdit(touchUpEdit(exported())), '1080p'), 0, { external: true }), '720p'));
+    expect(latestVersion(phone)?.resolution).toBe('720p');
   });
 
   it('opens the edit without switching anything again, and the next export is v2', () => {

@@ -7,7 +7,8 @@ import { Press } from './Press';
 import { T } from './T';
 
 interface Props<V extends string | number> {
-  options: { value: V; label: string; detail?: string }[];
+  /** An option with `disabled` can't be picked, and its `detail` should say why. */
+  options: { value: V; label: string; detail?: string; disabled?: boolean }[];
   value: V | undefined;
   onChange: (value: V) => void;
   disabled?: boolean;
@@ -21,18 +22,19 @@ export function Chips<V extends string | number>({ options, value, onChange, dis
     <View style={styles.wrap} accessibilityRole="radiogroup" accessibilityLabel={label}>
       {options.map((o) => {
         const on = o.value === value;
+        const off = !!disabled || !!o.disabled;
         return (
           <Press
             key={String(o.value)}
-            disabled={disabled}
+            disabled={off}
             onPress={() => {
               if (on) return;
               haptic.select();
               onChange(o.value);
             }}
-            style={[styles.chip, on && styles.on, disabled && !on && styles.off]}
+            style={[styles.chip, on && styles.on, off && !on && styles.off]}
             accessibilityRole="radio"
-            accessibilityState={{ selected: on, disabled: !!disabled }}
+            accessibilityState={{ selected: on, disabled: off }}
             accessibilityLabel={o.detail ? `${o.label}, ${o.detail}` : o.label}>
             <T v="callout" style={{ color: on ? color.stage : color.chalk }}>
               {o.label}

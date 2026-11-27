@@ -39,6 +39,7 @@ import type {
   Take,
   TakeAngle,
   TakeScope,
+  UpscaleLook,
   Vibe,
   VideoLength,
 } from './types';
@@ -980,6 +981,38 @@ export function setResolution(p: Project, resolution: Resolution): Project {
   return { ...p, exportState: { ...p.exportState, resolution } };
 }
 
+/** Which Topaz model takes the video to 1440p or 4K. */
+export function setUpscaler(p: Project, upscaler: UpscaleLook): Project {
+  if (p.exportState.done || p.job) return p;
+  return { ...p, exportState: { ...p.exportState, upscaler } };
+}
+
+/** True when the picked size is bigger than any device renders, so the studio server upscales it. */
+export function needsUpscale(resolution: Resolution): boolean {
+  return resolution === '1440p' || resolution === '4K';
+}
+
+/** The export comes out at `resolution` (a phone renders 1080p as 720p), so its version says what it really is. */
+export function deliverAt(p: Project, resolution: Resolution): Project {
+  if (!p.job || p.job.stage !== 'export' || p.exportState.resolution === resolution) return p;
+  return { ...p, exportState: { ...p.exportState, resolution } };
+}
+
+/**
+ * The upscale didn't finish, so the video is delivered at the size the device rendered. The export
+ * becomes that size (and so does its version), and the director says what happened. `refund` is
+ * the credits handed back for the upscale.
+ */
+export function upscaleFailed(p: Project, delivered: Resolution, reason: string, refund: number): Project {
+  if (!p.job || p.job.stage !== 'export') return p;
+  const wanted = p.exportState.resolution;
+  const smaller = deliverAt(p, delivered);
+  const next: Project = { ...smaller, exportState: { ...smaller.exportState, creditsCharged: Math.max(0, p.exportState.creditsCharged - refund) } };
+  const back = refund > 0 ? ` and the ${refund === 1 ? 'upscale credit is' : `${refund} upscale credits are`} back` : '';
+  const why = reason.trim().replace(/\.+$/, '');
+  return post(next, 'director', `The ${wanted} upscale didn't finish (${why}). You have it in ${delivered}${back}.`, { stage: 'export' });
+}
+
 /** Standard and Premium are subscriptions; the free trial pays per video with credits. */
 export function isSubscribed(plan: PlanId): boolean {
   return plan === 'Standard' || plan === 'Premium';
@@ -989,19 +1022,22 @@ const RES_RANK: Record<Resolution, number> = { '720p': 0, '1080p': 1, '1440p': 2
 
 /**
  * Credits an export costs.
- * - A new video: 1 credit, and 1 more for 1440p or 4K (they finish on the studio server with an
- *   upscale) unless the plan is Premium, which includes them.
+ * - A new video: 1 credit, and 1 more for 1440p or 4K (they finish on the studio server with a
+ *   Topaz upscale) unless the plan is Premium, which includes them.
+ * - Max detail (Topaz Starlight) at 1440p or 4K: 1 more on every export and every plan.
  * - A touch-up, once the video has a version: free on a plan. The only exception is taking a video
  *   bigger than it has been on Standard, which still costs the upscale credit once. Without a plan,
  *   a touch-up costs what a new export does.
  */
 export function exportCost(p: Project, plan: PlanId = 'Free trial'): number {
   const res = p.exportState.resolution;
-  const upscale = (res === '4K' || res === '1440p') && plan !== 'Premium' ? 1 : 0;
+  const upscale = needsUpscale(res) && plan !== 'Premium' ? 1 : 0;
+  // Starlight rebuilds detail frame by frame and costs about three times Proteus, on every export and every plan.
+  const detail = needsUpscale(res) && p.exportState.upscaler === 'detail' ? 1 : 0;
   const versions = p.versions ?? [];
-  if (versions.length === 0 || !isSubscribed(plan)) return 1 + upscale;
+  if (versions.length === 0 || !isSubscribed(plan)) return 1 + upscale + detail;
   const beenThisBig = versions.some((v) => RES_RANK[v.resolution] >= RES_RANK[res]);
-  return upscale && !beenThisBig ? 1 : 0;
+  return (upscale && !beenThisBig ? 1 : 0) + detail;
 }
 
 export function exportVideo(p: Project, cost = exportCost(p), opts: { external?: boolean } = {}): Project {

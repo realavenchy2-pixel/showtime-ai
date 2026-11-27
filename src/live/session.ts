@@ -12,7 +12,7 @@ import { lockPlan as lockPlanHere, planFromBrief } from "@/engine/brief";
 import { locationsToMake, setLocationImage } from "@/engine/production";
 import { useApp } from "@/engine/store";
 import { recentChat, summarize } from "@/engine/summary";
-import type { Project, VideoLength } from "@/engine/types";
+import type { Project, UpscaleLook, VideoLength } from "@/engine/types";
 
 import {
   askDirector,
@@ -188,6 +188,19 @@ export function disconnectServer(): void {
 export function directorIsLive(p: Project | undefined): boolean {
   const s = useServer.getState();
   return !!p && !p.isSample && s.status === "on" && !!s.caps?.director;
+}
+
+const NO_LOOKS: UpscaleLook[] = [];
+
+/** The Topaz looks the connected server can upscale 1440p and 4K with. Empty when there is no such server. */
+export function useUpscaleLooks(): UpscaleLook[] {
+  return useServer((s) => (s.status === "on" ? (s.caps?.upscale ?? NO_LOOKS) : NO_LOOKS));
+}
+
+/** The connected server, when it can upscale with `look`. */
+export function upscaleServer(look: UpscaleLook): ServerConfig | undefined {
+  const s = useServer.getState();
+  return s.status === "on" && s.caps?.upscale?.includes(look) ? s.config : undefined;
 }
 
 /** The artist said something. Claude answers when the server has it; the built-in director answers otherwise. */

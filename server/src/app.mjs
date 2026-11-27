@@ -9,6 +9,8 @@
 //   POST /v1/broll                  start one b-roll clip               GET /v1/broll/:id    where it stands
 //   POST /v1/references             make a reference frame for a look
 //   POST /v1/director               the director's answer plus commands (Claude)
+//   POST /v1/upscale/upload         a signed slot in fal storage for a rendered video (1440p and 4K)
+//   POST /v1/upscale                start a Topaz upscale               GET /v1/upscale/:id  where it stands
 //   GET  /v1/fetch?url=             a finished render, passed through so the browser can read it
 //
 // Every route except health needs the access code (header `x-showtime-key`) when SHOWTIME_APP_KEY is set.
@@ -16,6 +18,7 @@
 import { createBeeble, ProviderError } from './beeble.mjs';
 import { createBroll } from './broll.mjs';
 import { direct } from './claude.mjs';
+import { createUpscale } from './upscale.mjs';
 
 const RESULT_HOSTS = /(^|\.)(beeble\.ai|amazonaws\.com|googleapis\.com|googleusercontent\.com|cloudfront\.net|fal\.media|fal\.run|r2\.cloudflarestorage\.com|blob\.core\.windows\.net)$/i;
 
@@ -37,6 +40,7 @@ export function createApp(env, deps = {}) {
   const doFetch = deps.fetch ?? globalThis.fetch;
   const beeble = env.BEEBLE_API_KEY ? createBeeble({ apiKey: env.BEEBLE_API_KEY, fetch: doFetch, prefer: env.SWITCHX_VERSION || undefined }) : undefined;
   const broll = createBroll({ falKey: env.FAL_KEY, geminiKey: env.GEMINI_API_KEY, falH3Model: env.FAL_H3_MODEL, falOmniModel: env.FAL_OMNI_MODEL, fetch: doFetch });
+  const upscale = createUpscale({ falKey: env.FAL_KEY, fetch: doFetch, restUrl: env.FAL_REST_URL, cleanModel: env.FAL_UPSCALE_MODEL, detailModel: env.FAL_UPSCALE_DETAIL_MODEL });
   const claude = env.ANTHROPIC_API_KEY ? { apiKey: env.ANTHROPIC_API_KEY, model: env.CLAUDE_MODEL, fetch: doFetch } : undefined;
   const origins = (env.ALLOWED_ORIGINS ?? '*').split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -91,6 +95,7 @@ export function createApp(env, deps = {}) {
       broll: broll.models(),
       director: claude ? { model: claude.model || 'claude-sonnet-5-5' } : null,
       references: !!(env.OPENAI_API_KEY && beeble),
+      upscale: upscale.looks(),
       locked: !!env.SHOWTIME_APP_KEY,
     };
   }
@@ -180,6 +185,11 @@ export function createApp(env, deps = {}) {
       if (method === 'GET' && br) return json(request, await broll.status(decodeURIComponent(br[1])));
 
       if (method === 'POST' && path === '/v1/references') return json(request, await makeReference(await body(request)));
+
+      if (method === 'POST' && path === '/v1/upscale/upload') return json(request, await upscale.upload(await body(request)));
+      if (method === 'POST' && path === '/v1/upscale') return json(request, await upscale.start(await body(request)));
+      const up = path.match(/^\/v1\/upscale\/([^/]+)$/);
+      if (method === 'GET' && up) return json(request, await upscale.status(decodeURIComponent(up[1])));
 
       if (method === 'POST' && path === '/v1/director') {
         const input = await body(request);

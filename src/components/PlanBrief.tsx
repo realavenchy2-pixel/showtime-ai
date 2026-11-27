@@ -2,7 +2,7 @@ import { Image } from "expo-image";
 import { useState } from "react";
 import { StyleSheet, TextInput, View } from "react-native";
 
-import { Check, ImagePlus, Sparkles, X } from "@/components/icons";
+import { Check, ImagePlus, Pause, Play, Sparkles, X } from "@/components/icons";
 import {
   pickPart,
   snippetRange,
@@ -24,6 +24,7 @@ import type { Project, VideoLength } from "@/engine/types";
 import { haptic } from "@/lib/haptics";
 import { lockPlan, useServer } from "@/live/session";
 import { pickImage } from "@/media/pick";
+import { useSongPreview } from "@/media/preview";
 import { color, radius, space } from "@/theme/tokens";
 
 import { Button } from "./Button";
@@ -78,13 +79,33 @@ export function PlanBrief({
   const [mode, setMode] = useState<VideoLength>(project.length ?? "snippet");
   const [seconds, setSeconds] = useState(30);
   const current = videoRange(project);
+  // Starts on what the picked mode means: the whole song for Full song, the smart snippet otherwise.
   const [range, setRange] = useState(() =>
     project.partPicked
       ? current
-      : song
-        ? snippetRange(song, smartSnippetStart(song, 30), 30)
-        : { start: 0, end: 0 },
+      : !song
+        ? { start: 0, end: 0 }
+        : (project.length ?? "snippet") === "full"
+          ? { start: 0, end: song.durationSec }
+          : snippetRange(song, smartSnippetStart(song, 30), 30),
   );
+  // Listen while picking: the part picked, or the whole song.
+  const [listening, setListening] = useState<"part" | "full">("part");
+  const preview = useSongPreview(song, { stopAt: listening === "part" ? range.end : undefined });
+  const playingPart = preview.playing && listening === "part";
+  /** Moves the part; a part that's playing follows it. */
+  const movePart = (r: { start: number; end: number }) => {
+    if (playingPart && Math.abs(r.start - range.start) > 0.25) preview.seek(r.start);
+    setRange(r);
+  };
+  const listen = (which: "part" | "full") => {
+    haptic.select();
+    if (preview.playing && listening === which) return preview.pause();
+    setListening(which);
+    const inPart = preview.time >= range.start && preview.time < range.end - 0.3;
+    if (which === "part") preview.play(listening === "part" && inPart ? undefined : range.start);
+    else preview.play(listening === "full" && preview.time < song!.durationSec - 0.3 ? undefined : 0);
+  };
   const [about, setAbout] = useState(project.songAbout ?? "");
   const [message, setMessage] = useState(project.songMessage ?? "");
   const [musts, setMusts] = useState(project.mustHaves ?? "");
@@ -97,7 +118,7 @@ export function PlanBrief({
   const chooseMode = (m: VideoLength) => {
     haptic.select();
     setMode(m);
-    setRange(
+    movePart(
       m === "full"
         ? { start: 0, end: song.durationSec }
         : snippetRange(song, smartSnippetStart(song, seconds), seconds),
@@ -106,9 +127,10 @@ export function PlanBrief({
   const chooseSeconds = (n: number) => {
     haptic.select();
     setSeconds(n);
-    setRange(snippetRange(song, range.start, n));
+    movePart(snippetRange(song, range.start, n));
   };
   const savePart = () => {
+    preview.pause();
     apply(project.id, (p) => pickPart(p, mode, range));
     setStep("about");
   };
@@ -178,7 +200,7 @@ export function PlanBrief({
                 <Press
                   onPress={() => {
                     haptic.select();
-                    setRange(
+                    movePart(
                       snippetRange(
                         song,
                         smartSnippetStart(song, seconds),
@@ -199,12 +221,13 @@ export function PlanBrief({
                 song={song}
                 range={range}
                 mode="window"
-                onChange={(r) => setRange(snippetRange(song, r.start, seconds))}
+                playhead={preview.playing ? preview.time : undefined}
+                onChange={(r) => movePart(snippetRange(song, r.start, seconds))}
               />
               <TimeRow
                 label="Starts at"
                 value={range.start}
-                onChange={(t) => setRange(snippetRange(song, t, seconds))}
+                onChange={(t) => movePart(snippetRange(song, t, seconds))}
                 trailing={`ends ${formatTime(range.end)}`}
               />
             </>
@@ -214,13 +237,14 @@ export function PlanBrief({
                 song={song}
                 range={range}
                 mode="trim"
-                onChange={setRange}
+                playhead={preview.playing ? preview.time : undefined}
+                onChange={movePart}
               />
               <TimeRow
                 label="Start"
                 value={range.start}
                 onChange={(t) =>
-                  setRange({
+                  movePart({
                     start: Math.min(t, range.end - 5),
                     end: range.end,
                   })
@@ -231,7 +255,7 @@ export function PlanBrief({
                 label="End"
                 value={range.end}
                 onChange={(t) =>
-                  setRange({
+                  movePart({
                     start: range.start,
                     end: Math.max(
                       range.start + 5,
@@ -247,6 +271,25 @@ export function PlanBrief({
             v="caption"
             c="smoke"
           >{`${formatTime(range.end - range.start)} of video, ${formatTime(range.start)} to ${formatTime(range.end)}.`}</T>
+          <View style={styles.listenRow}>
+            <ListenButton
+              label={mode === "full" ? "Play trimmed song" : "Play this part"}
+              on={playingPart}
+              disabled={!preview.ready}
+              onPress={() => listen("part")}
+            />
+            <ListenButton
+              label="Play full song"
+              on={preview.playing && listening === "full"}
+              disabled={!preview.ready}
+              onPress={() => listen("full")}
+            />
+            {preview.playing ? (
+              <T v="caption" c="smoke" style={styles.tabular}>
+                {formatTime(preview.time)}
+              </T>
+            ) : null}
+          </View>
           <Button label="Use this part" disabled={busy} onPress={savePart} />
         </View>
       ) : null}
@@ -460,6 +503,22 @@ function Mode({
   );
 }
 
+function ListenButton({ label, on, disabled, onPress }: { label: string; on: boolean; disabled: boolean; onPress: () => void }) {
+  return (
+    <Press
+      onPress={onPress}
+      disabled={disabled}
+      style={[styles.listen, on && styles.listenOn, disabled && styles.listenOff]}
+      accessibilityLabel={on ? `Pause, ${label.toLowerCase()}` : label}
+    >
+      {on ? <Pause size={14} color={color.chalk} /> : <Play size={14} color={color.chalk} />}
+      <T v="callout" c="chalk">
+        {label}
+      </T>
+    </Press>
+  );
+}
+
 /** Type a time as 1:23 or 83. */
 function TimeRow({
   label,
@@ -548,6 +607,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   chipOn: { backgroundColor: color.accent },
+  listenRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: space.s },
+  listen: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: space.m,
+    paddingVertical: space.s,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.hairlineStrong,
+  },
+  listenOn: { backgroundColor: color.rig, borderColor: color.chalk },
+  listenOff: { opacity: 0.4 },
+  tabular: { fontVariant: ["tabular-nums"] },
   smart: {
     flexDirection: "row",
     alignItems: "center",

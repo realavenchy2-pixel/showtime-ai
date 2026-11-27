@@ -7,6 +7,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { useCameraAccess } from '@/components/record/CameraLayer';
+import { useProCamera } from '@/components/record/proCamera';
 import { RecorderChrome, type RecorderPhase } from '@/components/record/RecorderChrome';
 import { goBack } from '@/components/Screen';
 import { T } from '@/components/T';
@@ -52,6 +53,13 @@ export default function RecordScreen() {
   const { from, to } = range;
   const listenUntil = range.bounds.end;
   const n = project?.takes.length ?? 0;
+  const pro = useProCamera({
+    mirrored: facing === 'front',
+    formats: project?.formats ?? [],
+    recording: phase === 'recording',
+    elapsedSec: Math.max(0, songTime - from),
+    hidden: phase === 'opening' || phase === 'blocked',
+  });
 
   useEffect(() => {
     // Lets the song keep playing through the speaker while the camera records.
@@ -271,8 +279,14 @@ export default function RecordScreen() {
       onRecord={() => void record()}
       onStop={stop}
       onFlip={granted ? () => setFacing((f) => (f === 'front' ? 'back' : 'front')) : undefined}
-      onClose={() => goBack(`/project/${project.id}`)}>
-      {granted ? <CameraView ref={camera} style={StyleSheet.absoluteFill} facing={facing} mode="video" mirror={facing === 'front'} videoQuality="1080p" /> : null}
+      onClose={() => goBack(`/project/${project.id}`)}
+      viewfinder={pro.viewfinder}
+      status={pro.status}
+      tools={pro.tools}
+      readout={pro.readout}>
+      {granted ? (
+        <CameraView ref={camera} style={StyleSheet.absoluteFill} facing={facing} mode="video" mirror={facing === 'front'} videoQuality="1080p" zoom={pro.zoom} enableTorch={pro.torch} />
+      ) : null}
     </RecorderChrome>
   );
 }

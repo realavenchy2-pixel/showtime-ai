@@ -36,10 +36,14 @@ export function useSongPreview(song: Song | undefined, opts: { stopAt?: number }
     const audio = new Audio();
     audio.preload = 'auto';
     audioRef.current = audio;
-    void songUrl({ audioId, source } as Song).then((url) => {
-      if (live && url) audio.src = url;
-    });
     const onReady = () => live && setReadyFor(`${source}:${audioId}`);
+    void songUrl({ audioId, source } as Song).then((url) => {
+      if (!live || !url) return;
+      audio.src = url;
+      // iPhone Safari loads nothing until the first tap on play, so it never says it can play
+      // before then. The file is on hand, so play is ready as soon as it has an address.
+      onReady();
+    });
     const onPlay = () => live && setPlaying(true);
     const onPause = () => live && setPlaying(false);
     audio.addEventListener('canplay', onReady);
@@ -75,14 +79,16 @@ export function useSongPreview(song: Song | undefined, opts: { stopAt?: number }
         audio.currentTime = from;
         setTime(from);
       }
+      // Called straight from the tap, which is what iPhone Safari needs to make sound.
       void audio.play().catch(() => {});
     },
     pause: () => audioRef.current?.pause(),
     seek: (t) => {
       const audio = audioRef.current;
       if (!audio) return;
-      audio.currentTime = Math.max(0, t);
-      setTime(Math.max(0, t));
+      const to = Math.max(0, Number.isFinite(audio.duration) ? Math.min(t, audio.duration) : t);
+      audio.currentTime = to;
+      setTime(to);
     },
   };
 }
